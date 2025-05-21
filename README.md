@@ -1,5 +1,5 @@
 # APDC-2425-LandWise 
 
-# ![Logo](path/to/your-logo.png)
+# ![Logo](assets/logo.jpeg)
 
 ## Welcome to myLandWiseApp Platform!
