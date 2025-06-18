@@ -1,0 +1,39 @@
+-> Constructor sem argumentos e obrigatorio na classe java que representa a classe.
+-> AtomicInteger permite ter um contador para gerar identificadores unicos (116).
+-> Criacao de conta no Slide 0 . Google Cloud Platform
+-> Google App Engine
+-> gcloud init. Welcome! This command will take you through the configuration of gcloud. Necessario antes do deploy.
+-> gcloud cheat-sheet - display gcloud cheat sheet
+-> git clone https://github.com/henriquejoaolopesdomingos/adc-2024-2025.git
+-> mvn site - info do repo em site like javadoc
+-> Correr localmente mvn package appengine:run (Deploy local). Abrir firefox: firefox
+-> Deploy remoto: mvn package appengine:deploy -Dapp.deploy.projectId=<id-da-aplicação> -Dapp.deploy.version=<version number>
+-> gcloud app versions list. Verificar as versoes deployes in Cloud
+-> Basta adcionar um 5. a seguir ao https:// (esta é a forma de aceder a versões antigas).
+-> gcloud app services set-traffic SERVICE_NAME --splits VERSION_ID=1 --migrate. Altera o trafego da versão
+-> gcloud app services list. Mostra a lista de serviços disponiveis.
+-> gcloud app versions delete VERSION_ID. Apagar uma versão
+-> export DATASTORE_USE_PROJECT_ID_AS_APP_ID=true. Configures the emulator to use your Google Cloud project's ID as the application ID for Datastore operations.
+-> gcloud beta emulators datastore start. Abrir uma nova janela de linha de comando antes de iniciar o emulador.
+-> $(gcloud beta emulators datastore env-init). Correr antes do Deploy local
+-> $(gcloud beta emulators datastore env-unset). Caso se queira remover esta variavel depois de parar o Deploy.
+-> gcloud app deploy index.yaml. Actualizar indexes
+-> gcloud auth application-default login. Autenticação para uso no ambiente local.
+
+
+
+Para testar local adicionar as flags -i -v
+curl -i -v --request POST \
+  --url https://temporal-loop-453706-f3.oa.r.appspot.com/rest/register/newaccount \
+  --header 'Content-Type: application/json' \
+  --header 'User-Agent: insomnia/11.0.2' \
+  --data '{
+    "username": "rich",
+    "password": "password",
+    "confirmation": "password",
+    "email": "r-s-m-p@hotmail.com",
+    "name": "Richard Perez",
+    "telephone": "936656051",
+    "profile": "public"
+}'
+
