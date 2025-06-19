@@ -37,40 +37,55 @@ public class WorkSheetResource {
     private static final Logger LOG = Logger.getLogger(WorkSheetResource.class.getName());
     private static final Datastore datastore = DatastoreOptions.getDefaultInstance().getService();
     private final Gson g = new Gson();
-
+    
     @POST
     @Path("/create")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response createWorksheet(WorkSheetData data) {
+        if (data == null) {
+            return Response.status(Status.BAD_REQUEST)
+                .entity("{\"message\":\"Request body is missing or invalid.\"}")
+                .build();
+        }
+    
         LOG.fine("Attempt to register worksheet: " + data.id);
-
+    
         if (!isTokenValid(data.token)) return unauthorized();
         if (!"smbo".equalsIgnoreCase(data.token.role)) return forbidden("Only SMBO can create worksheets.");
         if (!data.valid()) return badRequest("Missing required fields.");
-
-        Key worksheetKey = datastore.newKeyFactory().setKind("WorkSheet").newKey(data.id);
-        Entity worksheet = Entity.newBuilder(worksheetKey)
-            .set("title", data.title)
-            .set("issue_date", data.issue_date)
-            .set("award_date", nvl(data.award_date))
-            .set("starting_date", nvl(data.starting_date))
-            .set("finishing_date", nvl(data.finishing_date))
-            .set("status", nvl(data.status, "nao_iniciado"))
-            .set("service_provider_id", data.service_provider_id)
-            .set("posa_code", data.posa_code)
-            .set("posa_description", data.posa_description)
-            .set("posp_code", data.posp_code)
-            .set("posp_description", data.posp_description)
-            .set("aigp", g.toJson(data.aigp))
-            .set("operations", g.toJson(data.operations))
-            .set("polygons", StringValue.newBuilder(g.toJson(data.polygon)).setExcludeFromIndexes(true).build())
-            .set("created_by", data.token.username)
-            .set("created_at", System.currentTimeMillis())
-            .build();
-
-        datastore.put(worksheet);
-        return Response.ok("{\"message\":\"Worksheet created successfully.\"}").build();
+    
+        try {
+            Key worksheetKey = datastore.newKeyFactory().setKind("WorkSheet").newKey(data.id);
+            Entity worksheet = Entity.newBuilder(worksheetKey)
+                .set("title", data.title)
+                .set("issue_date", data.issue_date)
+                .set("award_date", nvl(data.award_date))
+                .set("starting_date", nvl(data.starting_date))
+                .set("finishing_date", nvl(data.finishing_date))
+                .set("status", nvl(data.status, "nao_iniciado"))
+                .set("service_provider_id", data.service_provider_id)
+                .set("posa_code", data.posa_code)
+                .set("posa_description", data.posa_description)
+                .set("posp_code", data.posp_code)
+                .set("posp_description", data.posp_description)
+                .set("aigp", g.toJson(data.aigp))
+                .set("operations", g.toJson(data.operations))
+                .set("polygons", StringValue.newBuilder(g.toJson(data.polygon)).setExcludeFromIndexes(true).build())
+                .set("created_by", data.token.username)
+                .set("created_at", System.currentTimeMillis())
+                .build();
+    
+            datastore.put(worksheet);
+            return Response.ok("{\"message\":\"Worksheet created successfully.\"}").build();
+    
+        } catch (Exception e) {
+            LOG.severe("Error creating worksheet: " + e.getMessage());
+            return Response.status(Status.INTERNAL_SERVER_ERROR)
+                .entity("{\"message\":\"Internal error: " + e.getMessage() + "\"}")
+                .build();
+        }
     }
+    
 
     @GET
     @Path("/view/{id}")
