@@ -10,10 +10,12 @@ import java.util.logging.Logger;
 import com.google.cloud.datastore.Datastore;
 import com.google.cloud.datastore.DatastoreOptions;
 import com.google.cloud.datastore.Entity;
+import com.google.cloud.datastore.EntityQuery.Builder;
 import com.google.cloud.datastore.Key;
 import com.google.cloud.datastore.Query;
 import com.google.cloud.datastore.QueryResults;
 import com.google.cloud.datastore.StringValue;
+import com.google.cloud.datastore.StructuredQuery;
 import com.google.gson.Gson;
 
 import jakarta.ws.rs.Consumes;
@@ -27,6 +29,7 @@ import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.Response.Status;
+import pt.unl.fct.di.apdc.userapp.util.FilterRequest;
 import pt.unl.fct.di.apdc.userapp.util.TokenAuth;
 import pt.unl.fct.di.apdc.userapp.util.WorkSheetData;
 
@@ -105,12 +108,21 @@ public class WorkSheetResource {
     @POST
     @Path("/list")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response listWorksheets(TokenAuth token) {
+    public Response listWorksheets(FilterRequest filter) {
+        TokenAuth token = filter.token;
         if (!isTokenValid(token)) return unauthorized();
         if (!Set.of("smbo", "backoffice", "admin").contains(token.role.toLowerCase()))
             return forbidden("Unauthorized role to list worksheets.");
 
-        Query<Entity> query = Query.newEntityQueryBuilder().setKind("WorkSheet").build();
+        Query<Entity> query;
+        Builder builder = Query.newEntityQueryBuilder().setKind("WorkSheet");
+        if( filter.status != null && !filter.status.isEmpty()) {
+            builder.setFilter(StructuredQuery.PropertyFilter.eq("status", filter.status));
+        }
+        builder.setLimit(filter.limit)
+               .setOffset(filter.offset);
+
+        query = builder.build();
         QueryResults<Entity> results = datastore.run(query);
 
         List<Map<String, Object>> list = new ArrayList<>();
@@ -186,6 +198,42 @@ public class WorkSheetResource {
         }
 
         return Response.ok(new Gson().toJson(mapped)).build();
+    }
+    @GET
+    @Path("/stats")
+    public Response getStatistics() {
+        Map<String, Integer> stats = new HashMap<>();
+        Query<Entity> query = Query.newEntityQueryBuilder().setKind("WorkSheet").build();
+        QueryResults<Entity> results = datastore.run(query);
+        int total = 0;
+        while (results.hasNext()) {
+            Entity e = results.next();
+            String status = e.getString("status");
+            stats.put(status, stats.getOrDefault(status, 0) + 1);
+            total++;
+        }
+        stats.put("total", total);
+        return Response.ok(g.toJson(stats)).build();
+    }
+
+    @GET
+    @Path("/export")
+    @Produces("text/csv")
+    public Response exportWorksheets() {
+        Query<Entity> query = Query.newEntityQueryBuilder().setKind("WorkSheet").build();
+        QueryResults<Entity> results = datastore.run(query);
+
+        StringBuilder sb = new StringBuilder("ID,Title,Status\n");
+        while (results.hasNext()) {
+            Entity e = results.next();
+            sb.append(e.getKey().getName()).append(",")
+              .append(e.getString("title")).append(",")
+              .append(e.getString("status")).append("\n");
+        }
+
+        return Response.ok(sb.toString())
+            .header("Content-Disposition", "attachment; filename=worksheets.csv")
+            .build();
     }
 
     private boolean isTokenValid(TokenAuth token) {
