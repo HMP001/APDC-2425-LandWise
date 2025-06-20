@@ -235,14 +235,14 @@ public class ComputationResource {
 		}
 
 		// Step 3: Check if is a restrict account
-		if ("enduser".equals(token.role)) {
+		if (!"admin".equals(token.role) && !"backoffice".equals(token.role)) {
 			return Response.status(Response.Status.FORBIDDEN)
-					.entity("{\"message\":\"ENDUSER is not allowed to change roles.\"}")
+					.entity("{\"message\":\"ENDUSER is not allowed to change states.\"}")
 					.build();
 		}
 
 		//Step 4: Check if the new state is valid
-		if (!newState.equals("activated") && !newState.equals("desactivated")) {
+		if (!newState.equals("activated") && !newState.equals("desactivated") && !newState.equals("suspended")) {
 			return Response.status(Response.Status.BAD_REQUEST)
 					.entity("{\"message\":\"Invalid account state. Must be 'activated' or 'desactivated'.\"}")
 					.build();
@@ -256,6 +256,11 @@ public class ComputationResource {
 		if (targetUser == null) {
 			return Response.status(Response.Status.NOT_FOUND)
 					.entity("{\"message\":\"The target user not found.\"}")
+					.build();
+		}
+		if (targetUser.getString("user_role").equals("backoffice") && !"admin".equals(token.role)) {
+			return Response.status(Response.Status.FORBIDDEN)
+					.entity("{\"message\":\"Only ADMIN can change BACKOFFICE accounts state.\"}")
 					.build();
 		}
 
@@ -302,9 +307,9 @@ public class ComputationResource {
 		}
 
 		// Step 3: Check if is a restrict account
-		if ("enduser".equals(token.role)) {
+		if (!"admin".equals(token.role) && !"backoffice".equals(token.role)) {
 			return Response.status(Response.Status.FORBIDDEN)
-					.entity("{\"message\":\"ENDUSER is not allowed to change roles.\"}")
+					.entity("{\"message\":\"ENDUSER is not allowed to remove accounts.\"}")
 					.build();
 		}
 
@@ -546,6 +551,60 @@ public class ComputationResource {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response createWorksheet(){
 		return Response.ok("pong").build();
+	}
+	
+	@POST
+	@Path("/deleteaccount")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response deleteAccountRequest(RemoveAccount request) {
+
+		String userTarget = request.targetUsername;
+		String newState = "Removal Requested";
+		TokenAuth token = request.token;
+
+		LOG.fine("Attempt to request removal of the account state for user: " + token.username);
+
+
+		// Step 1: Validate token expiration
+		long now = System.currentTimeMillis();
+		if (now > token.validateTo) {
+			LOG.warning("Logout failed: token expired for user " + token.username);
+			return Response.status(Status.UNAUTHORIZED)
+					.entity("{\"message\":\"Token is expired. Please login again.\"}")
+					.build();
+		}
+		
+		// Step 2: Check if the token is valid by looking for it in the datastore
+		Key logoutKey = datastore.newKeyFactory()
+				.addAncestor(PathElement.of("User", token.username))
+				.setKind("RevokedToken")
+				.newKey(token.magicnumber);// Using the magic number as the key to mark this token as revoked
+
+		// If the token already exists, it means it's already revoked; in that case, no further action is required.
+		Entity existingRevokedToken = datastore.get(logoutKey);
+		if (existingRevokedToken != null) {
+			return Response.status(Status.BAD_REQUEST)
+					.entity("{\"message\":\"Token already revoked.\"}")
+					.build();
+		}
+
+		// Step 3: update the state
+
+		Key userKey = datastore.newKeyFactory().setKind("User").newKey(userTarget);
+		Entity user  = datastore.get(userKey);
+	
+		if (user == null) {
+			return Response.status(Response.Status.NOT_FOUND)
+					.entity("{\"message\":\"The target user not found.\"}")
+					.build();
+		}
+
+		Entity updatedUser = Entity.newBuilder(user)
+			.set("user_account_state", newState)
+			.build();
+		datastore.put(updatedUser);
+
+		return Response.ok("{\"message\":\"Requested removal done successfully.\"}").build();
 	}
 
 	
