@@ -58,8 +58,13 @@ public class MediaResource {
 		BlobInfo blobInfo = BlobInfo.newBuilder(blobId).setContentType(contentType).build();
 		// The following is deprecated since it is better to upload directly to GCS from
 		// the client
-		try {
-			storage.create(blobInfo, request.getInputStream());
+		try (var inputStream = request.getInputStream();
+			 var writer = storage.writer(blobInfo)) {
+			byte[] buffer = new byte[8192];
+			int bytesRead;
+			while ((bytesRead = inputStream.read(buffer)) != -1) {
+				writer.write(java.nio.ByteBuffer.wrap(buffer, 0, bytesRead));
+			}
 			return Response.ok().build();
 		} catch (IOException e) {
 			return Response.status(Status.INTERNAL_SERVER_ERROR).build();
