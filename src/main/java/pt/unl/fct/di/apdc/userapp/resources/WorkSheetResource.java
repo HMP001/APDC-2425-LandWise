@@ -92,9 +92,7 @@ public class WorkSheetResource {
         if (entity == null)
             return Response.status(Status.NOT_FOUND).entity("{\"error\":\"Not found\"}").build();
 
-        // SGVBO has restricted view; SDVBO and SMBO have full
         boolean isSGVBO = Roles.SGVBO.equalsIgnoreCase(role);
-        boolean isSDVBOorSMBO = Roles.SDVBO.equalsIgnoreCase(role) || Roles.SMBO.equalsIgnoreCase(role);
 
         Map<String, Object> data = new HashMap<>();
         for (String name : entity.getNames()) {
@@ -112,17 +110,15 @@ public class WorkSheetResource {
         TokenAuth token = filter.token;
         if (!isTokenValid(token)) return unauthorized();
 
-        // SMBO, SDVBO, SGVBO, SYSBO and SYSADMIN can list
-        Set<String> allowed = Set.of(Roles.SGVBO, Roles.SDVBO, Roles.SMBO, Roles.SYSADMIN, Roles.SYSBO);
-        if (!allowed.contains(token.role)) return forbidden("Not allowed to list worksheets.");
+        Set<String> allowed = Set.of("smbo", "backoffice", "admin", Roles.SGVBO, Roles.SDVBO, Roles.SYSADMIN, Roles.SYSBO);
+        if (!allowed.contains(token.role.toLowerCase())) return forbidden("Not allowed to list worksheets.");
 
-        Query<Entity> query;
         EntityQuery.Builder builder = Query.newEntityQueryBuilder().setKind("WorkSheet");
         if (filter.status != null && !filter.status.isEmpty())
             builder.setFilter(StructuredQuery.PropertyFilter.eq("status", filter.status));
 
         builder.setLimit(filter.limit).setOffset(filter.offset);
-        query = builder.build();
+        Query<Entity> query = builder.build();
 
         QueryResults<Entity> results = datastore.run(query);
         List<Map<String, Object>> list = new ArrayList<>();
@@ -197,6 +193,43 @@ public class WorkSheetResource {
         }
 
         return Response.ok(new Gson().toJson(mapped)).build();
+    }
+
+    @GET
+    @Path("/stats")
+    public Response getStatistics() {
+        Map<String, Integer> stats = new HashMap<>();
+        Query<Entity> query = Query.newEntityQueryBuilder().setKind("WorkSheet").build();
+        QueryResults<Entity> results = datastore.run(query);
+        int total = 0;
+        while (results.hasNext()) {
+            Entity e = results.next();
+            String status = e.getString("status");
+            stats.put(status, stats.getOrDefault(status, 0) + 1);
+            total++;
+        }
+        stats.put("total", total);
+        return Response.ok(g.toJson(stats)).build();
+    }
+
+    @GET
+    @Path("/export")
+    @Produces("text/csv")
+    public Response exportWorksheets() {
+        Query<Entity> query = Query.newEntityQueryBuilder().setKind("WorkSheet").build();
+        QueryResults<Entity> results = datastore.run(query);
+
+        StringBuilder sb = new StringBuilder("ID,Title,Status\n");
+        while (results.hasNext()) {
+            Entity e = results.next();
+            sb.append(e.getKey().getName()).append(",")
+              .append(e.getString("title")).append(",")
+              .append(e.getString("status")).append("\n");
+        }
+
+        return Response.ok(sb.toString())
+            .header("Content-Disposition", "attachment; filename=worksheets.csv")
+            .build();
     }
 
     private boolean isTokenValid(TokenAuth token) {
