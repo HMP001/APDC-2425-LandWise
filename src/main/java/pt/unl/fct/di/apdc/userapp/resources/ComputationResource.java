@@ -3,7 +3,21 @@ package pt.unl.fct.di.apdc.userapp.resources;
 
 
 import java.util.HashMap;
+import java.util.Map;
 import java.util.logging.Logger;
+
+import org.apache.commons.codec.digest.DigestUtils;
+
+import com.google.cloud.datastore.Datastore;
+import com.google.cloud.datastore.DatastoreOptions;
+import com.google.cloud.datastore.Entity;
+import com.google.cloud.datastore.Key;
+import com.google.cloud.datastore.PathElement;
+import com.google.cloud.datastore.Query;
+import com.google.cloud.datastore.QueryResults;
+import com.google.cloud.datastore.Transaction;
+import com.google.cloud.datastore.Value;
+import com.google.gson.Gson;
 
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
@@ -17,19 +31,8 @@ import pt.unl.fct.di.apdc.userapp.util.ChangePassword;
 import pt.unl.fct.di.apdc.userapp.util.ChangeRole;
 import pt.unl.fct.di.apdc.userapp.util.ChangeState;
 import pt.unl.fct.di.apdc.userapp.util.RemoveAccount;
+import pt.unl.fct.di.apdc.userapp.util.Roles;
 import pt.unl.fct.di.apdc.userapp.util.TokenAuth;
-import com.google.gson.Gson;
-import org.apache.commons.codec.digest.DigestUtils;
-import com.google.cloud.datastore.Datastore;
-import com.google.cloud.datastore.DatastoreOptions;
-import com.google.cloud.datastore.Entity;
-import com.google.cloud.datastore.Key;
-import com.google.cloud.datastore.PathElement;
-import com.google.cloud.datastore.Query;
-import com.google.cloud.datastore.QueryResults;
-import com.google.cloud.datastore.Transaction;
-import com.google.cloud.datastore.Value;
-import java.util.Map;
 
 
 
@@ -199,78 +202,62 @@ public class ComputationResource {
 
 
 	@POST
-	@Path("/changestate")
-	@Consumes(MediaType.APPLICATION_JSON)
-	@Produces(MediaType.APPLICATION_JSON)
-	public Response changeAccountState(ChangeState request) {
+    @Path("/changestate")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response changeAccountState(ChangeState request) {
+        String userTarget = request.targetUsername;
+        String newState = request.account_state;
+        TokenAuth token = request.token;
 
-		String userTarget = request.targetUsername;
-		String newState = request.account_state;
-		TokenAuth token = request.token;
+        LOG.fine("Attempt to modify account state for user: " + token.username);
 
-		LOG.fine("Attempt to modify the account state for user: " + token.username);
+        if (System.currentTimeMillis() > token.validateTo) {
+            return Response.status(Status.UNAUTHORIZED).entity("{\"message\":\"Token expired.\"}").build();
+        }
 
+        Key logoutKey = datastore.newKeyFactory()
+                .addAncestor(PathElement.of("User", token.username))
+                .setKind("RevokedToken")
+                .newKey(token.magicnumber);
+        if (datastore.get(logoutKey) != null) {
+            return Response.status(Status.BAD_REQUEST).entity("{\"message\":\"Token revoked.\"}").build();
+        }
 
-		// Step 1: Validate token expiration
-		long now = System.currentTimeMillis();
-		if (now > token.validateTo) {
-			LOG.warning("Logout failed: token expired for user " + token.username);
-			return Response.status(Status.UNAUTHORIZED)
-					.entity("{\"message\":\"Token is expired. Please login again.\"}")
-					.build();
-		}
-		
-		// Step 2: Check if the token is valid by looking for it in the datastore
-		Key logoutKey = datastore.newKeyFactory()
-				.addAncestor(PathElement.of("User", token.username))
-				.setKind("RevokedToken")
-				.newKey(token.magicnumber);// Using the magic number as the key to mark this token as revoked
+        if (!Roles.is(token.role, Roles.SYSADMIN, Roles.SYSBO, Roles.SGVBO, Roles.SDVBO, Roles.SMBO)) {
+            return Response.status(Status.FORBIDDEN).entity("{\"message\":\"Permission denied.\"}").build();
+        }
 
-		// If the token already exists, it means it's already revoked; in that case, no further action is required.
-		Entity existingRevokedToken = datastore.get(logoutKey);
-		if (existingRevokedToken != null) {
-			return Response.status(Status.BAD_REQUEST)
-					.entity("{\"message\":\"Token already revoked.\"}")
-					.build();
-		}
+        if (!newState.equals("ATIVADO") && !newState.equals("INATIVO") && !newState.equals("SUSPENSO") && !newState.equals("P-REMOVER")) {
+            return Response.status(Status.BAD_REQUEST).entity("{\"message\":\"Invalid state.\"}").build();
+        }
 
-		// Step 3: Check if is a restrict account
-		if (!"admin".equals(token.role) && !"backoffice".equals(token.role)) {
-			return Response.status(Response.Status.FORBIDDEN)
-					.entity("{\"message\":\"ENDUSER is not allowed to change states.\"}")
-					.build();
-		}
+        Key userKey = datastore.newKeyFactory().setKind("User").newKey(userTarget);
+        Entity user = datastore.get(userKey);
+        if (user == null) {
+            return Response.status(Status.NOT_FOUND).entity("{\"message\":\"User not found.\"}").build();
+        }
 
-		//Step 4: Check if the new state is valid
-		if (!newState.equals("activated") && !newState.equals("desactivated") && !newState.equals("suspended")) {
-			return Response.status(Response.Status.BAD_REQUEST)
-					.entity("{\"message\":\"Invalid account state. Must be 'activated' or 'desactivated'.\"}")
-					.build();
-		}
+        String userRole = user.getString("user_role").toUpperCase();
 
-		// Step 5: update the role
+        if (newState.equals("ATIVADO")) {
+            String[] requiredFields = {"user_email", "user_name", "user_pwd", "user_phone1", "user_nif", "user_cc",
+                    "user_cc_issue_date", "user_cc_issue_place", "user_cc_validity", "user_birth_date",
+                    "user_nationality", "user_residence_country", "user_address", "user_postal_code"};
 
-		Key userKey = datastore.newKeyFactory().setKind("User").newKey(userTarget);
-		Entity targetUser  = datastore.get(userKey);
-	
-		if (targetUser == null) {
-			return Response.status(Response.Status.NOT_FOUND)
-					.entity("{\"message\":\"The target user not found.\"}")
-					.build();
-		}
-		if (targetUser.getString("user_role").equals("backoffice") && !"admin".equals(token.role)) {
-			return Response.status(Response.Status.FORBIDDEN)
-					.entity("{\"message\":\"Only ADMIN can change BACKOFFICE accounts state.\"}")
-					.build();
-		}
+            for (String field : requiredFields) {
+                if (!user.contains(field) || user.getString(field).isBlank()) {
+                    return Response.status(Status.BAD_REQUEST)
+                            .entity("{\"message\":\"Missing required field for activation: " + field + "\"}").build();
+                }
+            }
+        }
 
-		Entity updatedUser = Entity.newBuilder(targetUser)
-			.set("user_account_state", newState)
-			.build();
-		datastore.put(updatedUser);
-
-		return Response.ok("{\"message\":\"Role updated successfully.\"}").build();
-	}
+        Entity updated = Entity.newBuilder(user).set("user_account_state", newState).build();
+        datastore.put(updated);
+        LOG.info("User " + userTarget + " state changed to " + newState);
+		return Response.ok("{\"message\":\"State changed successfully.\"}").build();
+    }
 
 	@POST
 	@Path("/removeaccount")
