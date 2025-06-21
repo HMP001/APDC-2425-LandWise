@@ -1,0 +1,81 @@
+import './Home.css';
+import { useNavigate } from 'react-router-dom';
+
+function parseToken(token) {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    return JSON.parse(jsonPayload);
+  } catch (e) {
+    return {username: 'Unknown User'};
+  }
+};
+
+async function Logout(token) {
+  try {
+    const response = await fetch('/rest/login/logout', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        //'Authorization': sessionStorage.getItem('authToken')
+      },
+      body: token
+    });
+    if (response.ok) {
+      console.log("Logout successful");
+      sessionStorage.removeItem('authToken');
+      window.location.reload(); // Reload the page to reflect logout
+    }
+  } catch (error) {
+    console.error("Logout error:", error);
+  }
+}
+
+export default function Home() {
+  const navigate = useNavigate();
+  const token = sessionStorage.getItem('authToken');
+  let username = '';
+
+  if (token) {
+    try {
+      username = JSON.parse(token).username; // Parse token as JSON
+    } catch (error) {
+      username = parseToken(token).username || '';
+    }
+  }
+
+  return (
+    <div className="home-root">
+      <div className="home-topbar">
+        <img src="/Logo.jpeg" alt="Logo" className="home-logo" />
+        <div className="home-top-right">
+        {token ? (
+          <>
+            <span>Logged in as: {username}</span>
+            <button onClick={() => {Logout(token);}}>Logout</button>
+          </>
+        ) : (
+          <>
+            <button onClick={() => navigate('/login')}>Login</button>
+            <button onClick={() => navigate('/register')}>Register</button>
+          </>
+        )}
+      </div>
+      </div>
+      <div className="home-main">
+        <div className="home-sidebar">
+          <button onClick={() => navigate('/user/listUsers')}>List Users</button>
+          <button onClick={() => navigate('/settings')}>Settings</button>
+        </div>
+        <div className="home-content">
+          <h1>Welcome to the Home Page</h1>
+          <p>This is the main content area.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
