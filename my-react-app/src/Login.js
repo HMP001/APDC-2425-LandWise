@@ -107,3 +107,8 @@ export default function Login() {
     </>
   );
 }
+
+export function logoutAndRedirect(navigate) {
+  sessionStorage.removeItem('authToken');
+  navigate('/login');
+}

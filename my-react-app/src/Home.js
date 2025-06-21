@@ -1,5 +1,7 @@
 import './Home.css';
 import { useNavigate } from 'react-router-dom';
+import { logoutAndRedirect } from './Login';
+import CheckRequests from './CheckRequests';
 
 function parseToken(token) {
   try {
@@ -14,20 +16,20 @@ function parseToken(token) {
   }
 };
 
-async function Logout(token) {
+async function Logout(token, navigate) {
   try {
     const response = await fetch('/rest/login/logout', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        //'Authorization': sessionStorage.getItem('authToken')
+        'Authorization': token
       },
       body: token
     });
+    CheckRequests(response, token, navigate);
     if (response.ok) {
       console.log("Logout successful");
-      sessionStorage.removeItem('authToken');
-      window.location.reload(); // Reload the page to reflect logout
+      logoutAndRedirect(navigate);
     }
   } catch (error) {
     console.error("Logout error:", error);
@@ -55,7 +57,7 @@ export default function Home() {
         {token ? (
           <>
             <span>Logged in as: {username}</span>
-            <button onClick={() => {Logout(token);}}>Logout</button>
+            <button onClick={() => {Logout(token, navigate);}}>Logout</button>
           </>
         ) : (
           <>
@@ -73,6 +75,7 @@ export default function Home() {
         <div className="home-content">
           <h1>Welcome to the Home Page</h1>
           <p>This is the main content area.</p>
+          <p>Work in Progress.</p>
         </div>
       </div>
     </div>

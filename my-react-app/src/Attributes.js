@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { topBar } from './TopBar';
+import CheckRequests from './CheckRequests';
 import './AuthForm.css';
 
-async function fetchAttributes(token) {
+async function fetchAttributes(token, navigate) {
   const response = await fetch('/api/user');
+  CheckRequests(response, token);
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`);
   }
@@ -96,7 +98,7 @@ export function Attributes() {
       }, 2000);
       return;
     }
-    fetchAttributes(token)
+    fetchAttributes(token, navigate)
       .then(attributes => {
         setAttributes(attributes);
         setInitialAttributes(attributes);
@@ -216,7 +218,7 @@ export function ChangePassword() {
         },
         body: JSON.stringify({ password })
       });
-
+      CheckRequests(response, token, navigate);
       if (response.ok) {
         console.log("Password changed successfully");
         navigate('/settings');
@@ -321,6 +323,7 @@ export function ChangeRole() {
         },
         body: JSON.stringify({ token, username, role })
       });
+      CheckRequests(response, token, navigate);
       if (response.ok) {
         setSuccess(true);
         console.log("Role changed successfully");

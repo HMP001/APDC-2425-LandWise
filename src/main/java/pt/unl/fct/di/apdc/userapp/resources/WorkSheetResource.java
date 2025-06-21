@@ -105,6 +105,7 @@ public class WorkSheetResource {
     @POST
     @Path("/list")
     @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
     public Response listWorksheets(TokenAuth token) {
         if (!isTokenValid(token)) return unauthorized();
         if (!Set.of("smbo", "backoffice", "admin").contains(token.role.toLowerCase()))

@@ -1,6 +1,14 @@
-.worksheet-container {
+.worksheet-list-container {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+.worksheet-container {
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
   /* Remove or comment out the next line: */
   /* align-items: center; */
   padding: 20px;

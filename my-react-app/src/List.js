@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { topBar } from './TopBar';
+import CheckRequests from './CheckRequests';
 
 export default function ListUsers() {
   const navigate = useNavigate();
@@ -15,14 +16,16 @@ export default function ListUsers() {
       }, 2000);
       return;
     }
-    fetch('/rest/utils/list', {
+    const response = fetch('/rest/utils/list', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': token
       },
       body: token
-    })
+    });
+    CheckRequests(response, token, navigate);
+    response
       .then(res => {
         if (!res.ok) throw new Error(res.statusText);
         return res.json();
