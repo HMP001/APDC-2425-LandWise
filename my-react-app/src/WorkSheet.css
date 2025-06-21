@@ -1,0 +1,92 @@
+.worksheet-container {
+  display: flex;
+  flex-direction: column;
+  /* Remove or comment out the next line: */
+  /* align-items: center; */
+  padding: 20px;
+}
+
+.worksheet-header {
+  font-size: 24px;
+  font-weight: bold;
+  margin-bottom: 20px;
+}
+
+.worksheet-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.worksheet-form {
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.worksheet-form-container {
+  min-height: 100vh;
+  /* Full viewport height */
+  display: flex;
+  justify-content: center;
+  /* Center horizontally */
+  align-items: flex-start;
+  /* Align to top, or use center for vertical centering */
+  background: #f7f9fa;
+  /* Light background */
+  padding: 40px 0;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 12px 18px;
+  align-items: center;
+}
+
+.form-label {
+  font-weight: 500;
+  text-align: right;
+  padding-right: 10px;
+}
+
+.form-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.form-section {
+  margin-bottom: 32px;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  padding: 18px 16px 10px 16px;
+}
+
+.worksheet-topbar {
+  position: sticky;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  z-index: 200;
+  background: #222;
+  color: #fff;
+  padding: 0.5rem 2rem 0.5rem 2rem;
+  display: flex;
+  align-items: center;
+  min-height: 3rem;
+  border-bottom: 1px solid #111;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.back-arrow {
+  font-size: 2rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  margin-right: 1rem;
+  color: #fff;
+  /* White arrow */
+  font-weight: bold;
+}
