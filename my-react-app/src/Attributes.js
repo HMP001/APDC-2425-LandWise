@@ -6,7 +6,7 @@ import './AuthForm.css';
 
 async function fetchAttributes(token, navigate) {
   const response = await fetch('/api/user');
-  CheckRequests(response, token);
+  CheckRequests(response, token, navigate);
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`);
   }
@@ -90,7 +90,6 @@ export function Attributes() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
-  // Always call hooks at the top level!
   useEffect(() => {
     if (!token) {
       setTimeout(() => {
@@ -233,56 +232,63 @@ export function ChangePassword() {
   };
 
   return (
-    <form onSubmit={handleSubmit}>
-      <div className="form-grid">
-        <label className="form-label" htmlFor="username">Username:</label>
-        <input
-          className="form-input"
-          id="username"
-          type="text"
-          name="username"
-          value={username}
-          readOnly
-          autoComplete="username"
-        />
-
-        <label className="form-label" htmlFor="currentPassword">Current Password:</label>
-        <input
-          className="form-input"
-          id="currentPassword"
-          type="password"
-          name="currentPassword"
-          required
-          autoComplete="current-password"
-        />
-
-        <label className="form-label" htmlFor="password">New Password:</label>
-        <input
-          className="form-input"
-          id="password"
-          type="password"
-          name="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          autoComplete="new-password"
-        />
-
-        <label className="form-label" htmlFor="confirmation">Confirm Password:</label>
-        <input
-          className="form-input"
-          id="confirmation"
-          type="password"
-          name="confirmation"
-          value={confirmation}
-          onChange={(e) => setConfirmation(e.target.value)}
-          required
-          autoComplete="new-password"
-        />
-      </div>
+    <>
+    {topBar(navigate)}
+    <div className="AuthForm">
       {error && <p className="error">{error}</p>}
-      <button type="submit">Change Password</button>
-    </form>
+      <header className="AuthForm-header">
+        <form onSubmit={handleSubmit}>
+          <div className="form-grid">
+            <label className="form-label" htmlFor="username">Username:</label>
+            <input
+              className="form-input"
+              id="username"
+              type="text"
+              name="username"
+              value={username}
+              readOnly
+              autoComplete="username"
+            />
+
+            <label className="form-label" htmlFor="currentPassword">Current Password:</label>
+            <input
+              className="form-input"
+              id="currentPassword"
+              type="password"
+              name="currentPassword"
+              required
+              autoComplete="current-password"
+            />
+
+            <label className="form-label" htmlFor="password">New Password:</label>
+            <input
+              className="form-input"
+              id="password"
+              type="password"
+              name="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              autoComplete="new-password"
+            />
+
+            <label className="form-label" htmlFor="confirmation">Confirm Password:</label>
+            <input
+              className="form-input"
+              id="confirmation"
+              type="password"
+              name="confirmation"
+              value={confirmation}
+              onChange={(e) => setConfirmation(e.target.value)}
+              required
+              autoComplete="new-password"
+            />
+          </div>
+          <button type="submit">Change Password</button>
+        </form>
+      </header>
+    </div>
+    </>
   );
 }
 

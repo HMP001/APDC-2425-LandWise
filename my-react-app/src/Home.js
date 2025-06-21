@@ -70,6 +70,7 @@ export default function Home() {
       <div className="home-main">
         <div className="home-sidebar">
           <button onClick={() => navigate('/user/listUsers')}>List Users</button>
+          <button onClick={() => navigate('/worksheet/create')}>Create Worksheet</button>
           <button onClick={() => navigate('/settings')}>Settings</button>
         </div>
         <div className="home-content">

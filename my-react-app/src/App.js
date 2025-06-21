@@ -6,10 +6,12 @@ import {Attributes, ChangePassword} from './Attributes';
 import WorkSheet, {ViewWorkSheet, ListWorkSheets} from './WorkSheet';
 import { Route, Routes } from 'react-router-dom';
 import Home from './Home';
+import { Navigate } from 'react-router-dom';
 
 function App() {
   return (
     <Routes>
+      <Route path="*" element={<Navigate to="/" />} />
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
