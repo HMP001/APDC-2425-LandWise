@@ -5,7 +5,11 @@ import CheckRequests from './CheckRequests';
 import './AuthForm.css';
 
 async function fetchAttributes(token, navigate) {
-  const response = await fetch('/api/user');
+  const response = await fetch('/api/user', {
+    headers: {
+      'Authorization': token
+    }
+  });
   CheckRequests(response, token, navigate);
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`);
@@ -215,7 +219,10 @@ export function ChangePassword() {
           'Content-Type': 'application/json',
           'Authorization': token
         },
-        body: JSON.stringify({ password })
+        body: JSON.stringify({
+          username: JSON.parse(token).username,
+          password
+        })
       });
       CheckRequests(response, token, navigate);
       if (response.ok) {
@@ -289,6 +296,111 @@ export function ChangePassword() {
         </form>
       </header>
     </div>
+    </>
+  );
+}
+
+export function ChangeState(){
+  const navigate = useNavigate();
+  const token = sessionStorage.getItem('authToken');
+
+  const [changeUser, setChangeUser] = useState('');
+  const [accountState, setAccountState] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+
+  useEffect(() => {
+    if (!token) {
+      setTimeout(() => {
+        navigate('/login');
+      }, 2000);
+    }
+  }, [token, navigate]);
+
+  if (!token) {
+    return <p>Error: No authentication token found. Redirecting to log in.</p>;
+  }
+
+  const userRole = JSON.parse(token).role;
+  if (userRole !== 'admin' && userRole !== 'backoffice') {
+    return <p>You do not have permission to change account state.</p>;
+  }
+
+  const handleStateChange = async (event) => {
+    event.preventDefault();
+    setError("");
+    setSuccess(false);
+
+    if (!changeUser || !accountState) {
+      setError("Please fill in both fields.");
+      return;
+    }
+
+    try {
+      const response = await fetch('/rest/utils/changestate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token
+        },
+        body: JSON.stringify({
+          targetUsername: changeUser,
+          account_state: accountState
+        }),
+      });
+
+      CheckRequests(response, token, navigate);
+
+      const result = await response.json();
+
+      if (response.ok) {
+        setSuccess(true);
+        console.log('Account state changed successfully');
+      } else {
+        setError(result.message || 'Failed to change account state.');
+      }
+    } catch (err) {
+      console.error("Error:", err);
+      setError('An error occurred while changing the account state.');
+    }
+  };
+
+  return (
+    <>
+      {topBar(navigate)}
+      <div className="AuthForm">
+        {error && <p className="error">{error}</p>}
+        {success && <p className="success">Account state updated successfully!</p>}
+        <header className="AuthForm-header">
+          <h2>Change Account State</h2>
+          <form onSubmit={handleStateChange} className="form-grid">
+            <label className="form-label" htmlFor="changeUser">Target Username:</label>
+            <input
+              className="form-input"
+              id="changeUser"
+              type="text"
+              name="changeUser"
+              value={changeUser}
+              onChange={(e) => setChangeUser(e.target.value)}
+            />
+
+            <label className="form-label" htmlFor="accountState">New State:</label>
+            <select
+              className="form-input"
+              id="accountState"
+              name="accountState"
+              value={accountState}
+              onChange={(e) => setAccountState(e.target.value)}
+            >
+              <option value="">Select state</option>
+              <option value="activated">ACTIVATED</option>
+              <option value="desactivated">DESACTIVATED</option>
+            </select>
+
+            <button type="submit">Change State</button>
+          </form>
+        </header>
+      </div>
     </>
   );
 }

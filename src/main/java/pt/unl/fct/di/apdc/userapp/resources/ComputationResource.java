@@ -237,7 +237,7 @@ import pt.unl.fct.di.apdc.userapp.util.TokenAuth;
 			}
 
 			// Step 3: Check if is a restrict account
-			if ("enduser".equals(token.role)) {
+			if ("enduser".equals(token.role) || "partner".equals(token.role)) {
 				return Response.status(Response.Status.FORBIDDEN)
 						.entity("{\"message\":\"ENDUSER is not allowed to change roles.\"}")
 						.build();
@@ -250,6 +250,7 @@ import pt.unl.fct.di.apdc.userapp.util.TokenAuth;
 						.build();
 			}
 
+
 			// Step 5: update the role
 
 			Key userKey = datastore.newKeyFactory().setKind("User").newKey(userTarget);
@@ -258,6 +259,12 @@ import pt.unl.fct.di.apdc.userapp.util.TokenAuth;
 			if (targetUser == null) {
 				return Response.status(Response.Status.NOT_FOUND)
 						.entity("{\"message\":\"The target user not found.\"}")
+						.build();
+			}
+
+			if(token.role.equals("backoffice") && targetUser.getString("user_account_state").equals("blocked")) {
+				return Response.status(Response.Status.FORBIDDEN)
+						.entity("{\"message\":\"BACKOFFICE cannot change the state of a blocked account.\"}")
 						.build();
 			}
 
