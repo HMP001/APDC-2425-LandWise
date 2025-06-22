@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { GoogleMap, LoadScript, DrawingManager, Polygon } from '@react-google-maps/api';
+import { GoogleMap, DrawingManager, Polygon } from '@react-google-maps/api';
 import { topBar } from './TopBar';
 import './WorkSheet.css';
 import { FaChevronUp, FaChevronDown } from 'react-icons/fa';
@@ -26,8 +26,6 @@ async function fetchWorkSheet(token, id) {
     throw error; // Re-throw the error to be handled in the component
   }
 }
-
-const GOOGLE_MAP_LIBRARIES = ['drawing'];
 
 const WorksheetDisplay = ({
   form,
@@ -280,10 +278,6 @@ const WorksheetDisplay = ({
       {/* Polygon */}
       <fieldset className="form-section">
         <legend>Polygon Coordinates</legend>
-        <LoadScript
-          googleMapsApiKey="AIzaSyCezGPnKTx3HfCx30coXZabciGCyywKRes"
-          libraries={GOOGLE_MAP_LIBRARIES}
-        >
           <GoogleMap
             id="drawing-manager-example"
             mapContainerStyle={{ height: "400px", width: "100%" }}
@@ -320,7 +314,6 @@ const WorksheetDisplay = ({
               />
             )}
           </GoogleMap>
-        </LoadScript>
       </fieldset>
     </>
   )
@@ -342,8 +335,8 @@ export default function WorkSheet({ mode }) {
     posp_code: '',
     posp_description: '',
     aigp: { id: '', name: '', address: '', nif: '' },
-    operations: [{ operation_code: '', operation_description: '', area_ha: '' }],
-    polygon: [{ lat: '', lng: '' }]
+    operations: [],
+    polygon: []
   });
   const [initialForm, setInitialForm] = useState(null);
   const [error, setError] = useState('');
@@ -515,8 +508,8 @@ export function ViewWorkSheet() {
     posp_code: '',
     posp_description: '',
     aigp: { id: '', name: '', address: '', nif: '' },
-    operations: [{ operation_code: '', operation_description: '', area_ha: '' }],
-    polygon: [{ lat: '', lng: '' }]
+    operations: [],
+    polygon: []
   });
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -705,3 +698,69 @@ const getPolygonCenter = (polygon) => {
     return;
   }
 }*/
+
+export function SelectWorksheet({ mode }) {
+  const [id, setId] = useState('');
+  const [showModal, setShowModal] = useState(true);
+  const inputRef = useRef(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (showModal && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [showModal]);
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    if (id.trim() === '') {
+      alert("Please enter a valid Worksheet ID.");
+      return;
+    }
+    if (mode === 'view') {
+      navigate(`/worksheet/view/${id}`);
+    } else if (mode === 'edit') {
+      navigate(`/worksheet/edit/${id}`);
+    } else {
+      console.error("Invalid mode specified:", mode);
+    }
+  };
+
+  return (
+    <>
+      {showModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h2>Select Worksheet</h2>
+            <form onSubmit={handleSubmit}>
+              <label htmlFor="worksheetId">Worksheet ID:</label>
+              <input
+                type="text"
+                id="worksheetId"
+                value={id}
+                onChange={(e) => setId(e.target.value)}
+                ref={inputRef}
+                required
+                autoFocus
+                className="form-input"
+              />
+              <button type="submit" className="form-button">Go</button>
+              <button type="button" className="form-button" onClick={() => setShowModal(false)}>
+                Cancel
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+      {!showModal && (
+        <div className="worksheet-selection">
+          <h2>Select Worksheet</h2>
+          <button onClick={() => setShowModal(true)} className="form-button">
+            Select Worksheet
+          </button>
+        </div>
+      )}
+    </>
+  );
+
+}

@@ -165,7 +165,7 @@ export function Attributes() {
       {error && <p className="error">{error}</p>}
       {success && <p className="success">Attributes updated successfully!</p>}
       <header className="AuthForm-header">
-        <p>Register a new account</p>
+        <p>Edit your account</p>
         {attributesForms({
           attributes,
           changeData,
@@ -247,6 +247,7 @@ export function ChangePassword() {
               name="username"
               value={username}
               readOnly
+              disabled={true}
               autoComplete="username"
             />
 
@@ -299,6 +300,7 @@ export function ChangeRole() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [role, setRole] = useState('');
+  const [changeUser, setChangeUser] = useState('')
 
   useEffect(() => {
     if (!token) {
@@ -347,36 +349,45 @@ export function ChangeRole() {
 
   // Implement role change logic here
   return (
-    <form onSubmit={handleRoleChange}>
-      <div className="form-grid">
-        <label className="form-label" htmlFor="username">Username:</label>
-        <input
-          className="form-input"
-          id="username"
-          type="text"
-          name="username"
-          value={username}
-          readOnly
-          autoComplete="username"
-        />
-
-        <label className="form-label" htmlFor="role">New Role:</label>
-        <select
-          className="form-input"
-          id="role"
-          name="role"
-          value={role}
-          onChange={(e) => setRole(e.target.value)}
-          required
-        >
-          <option value="">Select a role</option>
-          <option value="admin">Admin</option>
-          <option value="user">User</option>
-        </select>
-      </div>
+    <>
+    {topBar(navigate)}
+    <div className="AuthForm">
       {error && <p className="error">{error}</p>}
-      {success && <p className="success">Role changed successfully!</p>}
-      <button type="submit">Change Role</button>
-    </form>
+      <header className="AuthForm-header">
+        <h2>Change User Role</h2>
+        <div className="form-grid">
+          <form onSubmit={handleRoleChange}>
+              <label className="form-label" htmlFor="username">Username:</label>
+              <input
+                className="form-input"
+                id="username"
+                type="text"
+                name="username"
+                value={changeUser}
+                onChange={(e) => setChangeUser(e.target.value)}
+                autoComplete="username"
+              />
+
+              <label className="form-label" htmlFor="role">New Role:</label>
+              <select
+                className="form-input"
+                id="role"
+                name="role"
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                required
+              >
+                <option value="">Select a role</option>
+                <option value="admin">Admin</option>
+                <option value="sbo">System Back Office</option>
+                <option value="enduser">End User</option>
+              </select>
+            {success && <p className="success">Role changed successfully!</p>}
+            <button type="submit">Change Role</button>
+          </form>
+        </div>
+      </header>
+    </div>
+    </>
   );
 }
