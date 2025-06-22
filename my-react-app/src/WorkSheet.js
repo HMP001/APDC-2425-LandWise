@@ -445,7 +445,7 @@ export default function WorkSheet({ mode }) {
       if (response.ok) {
         const data = await response.json();
         console.log(`WorkSheet ${mode === 'create' ? "created" : "edited"} successfully:`, data);
-        navigate('/worksheets'); // Redirect to the worksheets list or detail page
+        navigate('/'); // Redirect to the worksheets list or detail page
       } else {
         const errorData = await response.json();
         setError(errorData.message || "Failed to create worksheet. Please try again later.");

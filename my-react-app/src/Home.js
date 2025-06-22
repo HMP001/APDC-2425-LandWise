@@ -78,6 +78,7 @@ export default function Home() {
           <button onClick={() => navigate('/user/attributes')}>Edit Attributes</button>
           <button onClick={() => navigate('/user/changePassword')}>Change Password</button>
           <button onClick={() => navigate('/user/changeRole')}>Change Role</button>
+          <button onClick={() => navigate('/user/changeState')}>Change State</button>
           <button onClick={() => navigate('/user/listUsers')}>List Users</button>
           { (role === 'admin' || role === 'smbo') && (
             <>
@@ -91,8 +92,15 @@ export default function Home() {
         </div>
         <div className="home-content">
           <h1>Welcome to the Home Page</h1>
-          <p>This is the main content area.</p>
-          <p>Work in Progress.</p>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <img
+              src="/Logo.jpeg"
+              alt="Welcome"
+              style={{ width: '300px', margin: '20px 0' }}
+            />
+            <p>This is the main content area.</p>
+            <p>Work in Progress.</p>
+          </div>
         </div>
         {worksheetModal && (
           <SelectWorksheet

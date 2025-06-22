@@ -166,9 +166,9 @@ export function Attributes() {
     <>
     {topBar(navigate)}
     <div className="AuthForm">
-      {error && <p className="error">{error}</p>}
       {success && <p className="success">Attributes updated successfully!</p>}
       <header className="AuthForm-header">
+        {error && <p className="error">{error}</p>}
         <p>Edit your account</p>
         {attributesForms({
           attributes,
@@ -242,8 +242,8 @@ export function ChangePassword() {
     <>
     {topBar(navigate)}
     <div className="AuthForm">
-      {error && <p className="error">{error}</p>}
       <header className="AuthForm-header">
+        {error && <p className="error">{error}</p>}
         <form onSubmit={handleSubmit}>
           <div className="form-grid">
             <label className="form-label" htmlFor="username">Username:</label>
@@ -369,9 +369,9 @@ export function ChangeState(){
     <>
       {topBar(navigate)}
       <div className="AuthForm">
-        {error && <p className="error">{error}</p>}
         {success && <p className="success">Account state updated successfully!</p>}
         <header className="AuthForm-header">
+          {error && <p className="error">{error}</p>}
           <h2>Change Account State</h2>
           <form onSubmit={handleStateChange} className="form-grid">
             <label className="form-label" htmlFor="changeUser">Target Username:</label>
@@ -464,8 +464,8 @@ export function ChangeRole() {
     <>
     {topBar(navigate)}
     <div className="AuthForm">
-      {error && <p className="error">{error}</p>}
       <header className="AuthForm-header">
+        {error && <p className="error">{error}</p>}
         <h2>Change User Role</h2>
         <div className="form-grid">
           <form onSubmit={handleRoleChange}>
