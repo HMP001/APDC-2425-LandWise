@@ -14,7 +14,7 @@ const GOOGLE_MAP_LIBRARIES = ['drawing'];
 function App() {
   return (
     <LoadScript
-      googleMapsApiKey='AIzaSyCezGPnKTx3HfCx30coXZabciGCyywKRes'
+      googleMapsApiKey={process.env.REACT_APP_GOOGLE_MAPS_API_KEY}
       libraries={GOOGLE_MAP_LIBRARIES}
     >
     <Routes>

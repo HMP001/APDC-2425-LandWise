@@ -83,18 +83,18 @@ const RegisterForm = ({
         />
 
         <label className="form-label" htmlFor="profile">Profile:</label>
-        <input
+        <select
           className="form-input"
           id="profile"
-          type="text"
           name="profile"
           value={userData.profile}
           onChange={changeData}
-          required
-          autoComplete="profile"
-        />
+        >
+          <option value="PUBLICO">Public</option>
+          <option value="PRIVADO">Private</option>
+        </select>
 
-        <label className="form-label" htmlFor="role">Profile:</label>
+        <label className="form-label" htmlFor="role">Role:</label>
         <select
           className="form-input"
           id="role"
@@ -103,9 +103,9 @@ const RegisterForm = ({
           onChange={changeData}
           required
         >
-          <option value="enduser">End User</option>
-          <option value="admin">Admin</option>
-          <option value="smbo">SMBO</option>
+          <option value="RU">End User</option>
+          <option value="SYSBO">System Back Office</option>
+          <option value="SMBO">Back Office</option>
         </select>
 
         <label className="form-label" htmlFor="nif">NIF:</label>
@@ -240,6 +240,18 @@ const RegisterForm = ({
           autoComplete="cc_validity"
         />
 
+        <label className="form-label" htmlFor="birth_date">Birth Date</label>
+        <input
+          className="form-input"
+          id="birth_date"
+          type="date"
+          name="birth_date"
+          value={userData.birth_date}
+          onChange={changeData}
+          required
+          autoComplete="birth_date"
+        />
+
         <label className="form-label" htmlFor="nationality">Nationality</label>
         <input
           className="form-input"
@@ -280,7 +292,7 @@ function Register() {
     name: '',
     telephone: '',
     profile: 'PUBLICO',
-    role: 'enduser',
+    role: 'RU',
     nif: '',
     employer: '',
     job: '',
@@ -292,6 +304,7 @@ function Register() {
     cc_issue_date: '',
     cc_issue_place: '',
     cc_validity: '',
+    birth_date: '',
     nationality: '',
     residence_country: ''
   });
@@ -320,6 +333,7 @@ function Register() {
         body: JSON.stringify({
           username: userData.username,
           password: userData.password,
+          confirmation: userData.confirmation,
           email: userData.email,
           name: userData.name,
           telephone: userData.telephone,
@@ -335,7 +349,10 @@ function Register() {
           cc: userData.cc,
           cc_issue_date: userData.cc_issue_date,
           cc_issue_place: userData.cc_issue_place,
-          cc_validity: userData.cc_valid
+          cc_validity: userData.cc_valid,
+          birth_date: userData.birth_date,
+          nationality: userData.nationality,
+          residence_country: userData.residence_country
         }),
       });
 
