@@ -36,7 +36,7 @@ public class RegisterResource {
     public Response registerNewUser(AccountData data) {
         LOG.fine("Attempt to register user: " + data.username);
 
-        if (!data.validRegistration() || !Roles.isValidRole(data.role)) {
+        if (!data.validForRegistrationByRole() || !Roles.isValidRole(data.role)) {
             return Response.status(Status.BAD_REQUEST).entity("Dados obrigatórios em falta ou role inválido.").build();
         }
 

@@ -3,6 +3,10 @@ package pt.unl.fct.di.apdc.userapp.resources;
 
 import java.util.logging.Logger;
 
+import com.google.cloud.datastore.Datastore;
+import com.google.cloud.datastore.DatastoreOptions;
+import com.google.gson.Gson;
+
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -10,10 +14,6 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import pt.unl.fct.di.apdc.userapp.util.RootInitializer;
 import pt.unl.fct.di.apdc.userapp.util.TokenAuth;
-
-import com.google.cloud.datastore.Datastore;
-import com.google.cloud.datastore.DatastoreOptions;
-import com.google.gson.Gson;
 
 
 @Path("/admin")

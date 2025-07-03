@@ -1,7 +1,5 @@
 package pt.unl.fct.di.apdc.userapp.resources;
 
-
-
 import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Logger;
@@ -189,81 +187,82 @@ public class ComputationResource {
 
 
 	@POST
-    @Path("/changestate")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response changeAccountState(ChangeState request) {
-        String userTarget = request.targetUsername;
-        String newState = request.account_state;
-        TokenAuth token = request.token;
+@Path("/changestate")
+@Consumes(MediaType.APPLICATION_JSON)
+@Produces(MediaType.APPLICATION_JSON)
+public Response changeAccountState(ChangeState request) {
+    String userTarget = request.targetUsername;
+    String newState = request.account_state;
+    TokenAuth token = request.token;
 
-        LOG.fine("Attempt to modify account state for user: " + token.username);
+    LOG.fine("Attempt to modify account state for user: " + token.username);
 
-        if (System.currentTimeMillis() > token.validateTo) {
-            return Response.status(Status.UNAUTHORIZED)
-                    .entity("{\"message\":\"Token expired.\"}").build();
-        }
-
-        Key logoutKey = datastore.newKeyFactory()
-                .addAncestor(PathElement.of("User", token.username))
-                .setKind("RevokedToken")
-                .newKey(token.magicnumber);
-        if (datastore.get(logoutKey) != null) {
-            return Response.status(Status.BAD_REQUEST)
-                    .entity("{\"message\":\"Token revoked.\"}").build();
-        }
-
-        if (!Roles.is(token.role, Roles.SYSADMIN, Roles.SYSBO, Roles.SGVBO, Roles.SDVBO, Roles.SMBO)) {
-            return Response.status(Status.FORBIDDEN)
-                    .entity("{\"message\":\"Permission denied.\"}").build();
-        }
-
-        if (!newState.equals("ATIVADO") && !newState.equals("INATIVO") &&
-            !newState.equals("SUSPENSO") && !newState.equals("P-REMOVER")) {
-            return Response.status(Status.BAD_REQUEST)
-                    .entity("{\"message\":\"Invalid state.\"}").build();
-        }
-
-        Key userKey = datastore.newKeyFactory().setKind("User").newKey(userTarget);
-        Entity user = datastore.get(userKey);
-        if (user == null) {
-            return Response.status(Status.NOT_FOUND)
-                    .entity("{\"message\":\"User not found.\"}").build();
-        }
-
-        String userRole = user.getString("user_role").toUpperCase();
-
-        // Regras por role de quem altera estado
-        if (Roles.is(token.role, Roles.SGVBO)) {
-            if (!Roles.is(userRole, Roles.RU, Roles.VU, Roles.ADLU)) {
-                return Response.status(Status.FORBIDDEN)
-                        .entity("{\"message\":\"SGVBO can only change state of RU, VU, ADLU users.\"}").build();
-            }
-        }
-
-        // Se for ativação, validar campos obrigatórios
-        if (newState.equals("ATIVADO")) {
-            String[] requiredFields = {
-                "user_email", "user_name", "user_pwd", "user_phone1", "user_nif", "user_cc",
-                "user_cc_issue_date", "user_cc_issue_place", "user_cc_validity", "user_birth_date",
-                "user_nationality", "user_residence_country", "user_address", "user_postal_code"
-            };
-
-            for (String field : requiredFields) {
-                if (!user.contains(field) || user.getString(field).isBlank()) {
-                    return Response.status(Status.BAD_REQUEST)
-                            .entity("{\"message\":\"Missing required field for activation: " + field + "\"}").build();
-                }
-            }
-        }
-
-        Entity updated = Entity.newBuilder(user)
-                .set("user_account_state", newState)
-                .build();
-        datastore.put(updated);
-        LOG.info("User " + userTarget + " state changed to " + newState);
-        return Response.ok("{\"message\":\"State changed successfully.\"}").build();
+    if (System.currentTimeMillis() > token.validateTo) {
+        return Response.status(Status.UNAUTHORIZED)
+                .entity("{\"message\":\"Token expired.\"}").build();
     }
+
+    Key logoutKey = datastore.newKeyFactory()
+            .addAncestor(PathElement.of("User", token.username))
+            .setKind("RevokedToken")
+            .newKey(token.magicnumber);
+    if (datastore.get(logoutKey) != null) {
+        return Response.status(Status.BAD_REQUEST)
+                .entity("{\"message\":\"Token revoked.\"}").build();
+    }
+
+    if (!Roles.is(token.role, Roles.SYSADMIN, Roles.SYSBO, Roles.SGVBO, Roles.SDVBO, Roles.SMBO)) {
+        return Response.status(Status.FORBIDDEN)
+                .entity("{\"message\":\"Permission denied.\"}").build();
+    }
+
+    if (!newState.equals("ATIVADO") && !newState.equals("INATIVO") &&
+        !newState.equals("SUSPENSO") && !newState.equals("P-REMOVER")) {
+        return Response.status(Status.BAD_REQUEST)
+                .entity("{\"message\":\"Invalid state.\"}").build();
+    }
+
+    Key userKey = datastore.newKeyFactory().setKind("User").newKey(userTarget);
+    Entity user = datastore.get(userKey);
+    if (user == null) {
+        return Response.status(Status.NOT_FOUND)
+                .entity("{\"message\":\"User not found.\"}").build();
+    }
+
+    String userRole = user.getString("user_role").toUpperCase();
+
+    // Regras por role de quem altera estado
+    if (Roles.is(token.role, Roles.SGVBO)) {
+        if (!Roles.is(userRole, Roles.RU, Roles.VU, Roles.ADLU)) {
+            return Response.status(Status.FORBIDDEN)
+                    .entity("{\"message\":\"SGVBO can only change state of RU, VU, ADLU users.\"}").build();
+        }
+    }
+
+    // Validação passiva de campos na ativação (apenas loga, não bloqueia)
+    if (newState.equals("ATIVADO")) {
+        String[] requiredFields = {
+            "user_email", "user_name", "user_pwd", "user_phone1", "user_nif", "user_cc",
+            "user_cc_issue_date", "user_cc_issue_place", "user_cc_validity", "user_birth_date",
+            "user_nationality", "user_residence_country", "user_address", "user_postal_code"
+        };
+
+        for (String field : requiredFields) {
+            if (!user.contains(field) || user.getString(field).isBlank()) {
+                LOG.warning("Activating user '" + userTarget + "' with missing or blank field: " + field);
+                // Não bloqueia, apenas avisa
+            }
+        }
+    }
+
+    Entity updated = Entity.newBuilder(user)
+            .set("user_account_state", newState)
+            .build();
+    datastore.put(updated);
+    LOG.info("User " + userTarget + " state changed to " + newState);
+    return Response.ok("{\"message\":\"State changed successfully.\"}").build();
+}
+
 
 	@POST
     @Path("/removeaccount")
