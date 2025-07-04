@@ -12,6 +12,7 @@ public class AccountData {
 
     public String role;
     public String nif;
+    public String telephone2;
     public String employer;
     public String job;
     public String address;
@@ -62,6 +63,7 @@ public class AccountData {
                        isNotBlank(address) &&
                        isNotBlank(postal_code) &&
                        isNotBlank(telephone) &&
+                       isNotBlank(telephone2) &&
                        isNotBlank(nif) &&
                        isNotBlank(cc) &&
                        isNotBlank(cc_issue_date) &&

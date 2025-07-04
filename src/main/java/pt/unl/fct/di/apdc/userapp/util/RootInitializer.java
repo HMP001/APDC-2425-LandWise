@@ -30,6 +30,7 @@ public class RootInitializer {
                 .set("user_name", "System Admin")
                 .set("user_email", "root@admin.com")
                 .set("user_phone1", "000000000")
+                .set("user_phone2", "111222333")
                 .set("user_profile", "PRIVADO")
                 .set("user_role", "SYSADMIN")
                 .set("user_account_state", "ATIVADO")
