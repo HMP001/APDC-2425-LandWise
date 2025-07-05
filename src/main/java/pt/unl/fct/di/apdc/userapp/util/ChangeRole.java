@@ -5,7 +5,7 @@ public class ChangeRole {
 
     public String targetUsername;
     public String newRole;
-    public TokenAuth token;
+    public String token;
     public ChangeRole() {
     }
 

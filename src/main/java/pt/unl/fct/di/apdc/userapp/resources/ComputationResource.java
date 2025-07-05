@@ -6,6 +6,7 @@ import java.util.logging.Logger;
 
 import org.apache.commons.codec.digest.DigestUtils;
 
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.google.cloud.datastore.Datastore;
 import com.google.cloud.datastore.DatastoreOptions;
 import com.google.cloud.datastore.Entity;
@@ -28,6 +29,7 @@ import pt.unl.fct.di.apdc.userapp.util.ChangeAttributes;
 import pt.unl.fct.di.apdc.userapp.util.ChangePassword;
 import pt.unl.fct.di.apdc.userapp.util.ChangeRole;
 import pt.unl.fct.di.apdc.userapp.util.ChangeState;
+import pt.unl.fct.di.apdc.userapp.util.JWTToken;
 import pt.unl.fct.di.apdc.userapp.util.RemoveAccount;
 import pt.unl.fct.di.apdc.userapp.util.Roles;
 import pt.unl.fct.di.apdc.userapp.util.TokenAuth;
@@ -46,16 +48,19 @@ public class ComputationResource {
 	@POST
     @Path("/list")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response listUsers(TokenAuth token) {
-        LOG.fine("Attempt to list all users for user: " + token.username);
-
-        if (System.currentTimeMillis() > token.validateTo) {
+    public Response listUsers(String token) {
+        if (!JWTToken.validateJWT(token)) {
             return Response.status(Status.UNAUTHORIZED)
                     .entity("{\"message\":\"Token is expired. Please login again.\"}")
                     .build();
         }
+        
+        DecodedJWT jwt = JWTToken.extractJWT(token);
+		String username = jwt.getSubject();
+		String role = jwt.getClaim("role").asString();
+        LOG.fine("Attempt to list all users for user: " + username);
 
-        if (!Roles.isValidRole(token.role)) {
+        if (!Roles.isValidRole(role)) {
             return Response.status(Status.FORBIDDEN)
                     .entity("{\"message\":\"Invalid role.\"}")
                     .build();
@@ -72,21 +77,21 @@ public class ComputationResource {
             String userState = user.contains("user_account_state") ? user.getString("user_account_state") : "";
             String userProfile = user.contains("user_profile") ? user.getString("user_profile") : "";
 
-            if (Roles.is(token.role, Roles.RU, Roles.VU)) {
+            if (Roles.is(role, Roles.RU, Roles.VU)) {
                 if (!userRole.equals(Roles.RU) || !userState.equals("ATIVADO") || !userProfile.equals("PUBLICO")) {
                     continue;
                 }
-            } else if (Roles.is(token.role, Roles.ADLU, Roles.PRBO, Roles.PO)) {
+            } else if (Roles.is(role, Roles.ADLU, Roles.PRBO, Roles.PO)) {
                 if (!Roles.is(userRole, Roles.RU, Roles.VU)) {
                     continue;
                 }
-            } else if (!Roles.is(token.role, Roles.SYSADMIN, Roles.SYSBO, Roles.SGVBO, Roles.SDVBO, Roles.SMBO)) {
+            } else if (!Roles.is(role, Roles.SYSADMIN, Roles.SYSBO, Roles.SGVBO, Roles.SDVBO, Roles.SMBO)) {
                 return Response.status(Status.FORBIDDEN)
                         .entity("{\"message\":\"Role not authorized to list users.\"}")
                         .build();
             }
 
-            Map<String, Object> userData = entityToMap(user, token.role);
+            Map<String, Object> userData = entityToMap(user, role);
             allUsers.put(user.getKey().getName(), userData);
         }
 
@@ -117,17 +122,20 @@ public class ComputationResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response changeRole(ChangeRole request) {
-        String userTarget = request.targetUsername;
-        String newRole = request.newRole;
-        TokenAuth token = request.token;
-
-        LOG.fine("Attempt to modify the role for user: " + token.username);
-
-        if (System.currentTimeMillis() > token.validateTo) {
+		String token = request.token;
+		if (!JWTToken.validateJWT(token)) {
             return Response.status(Status.UNAUTHORIZED)
                     .entity("{\"message\":\"Token is expired. Please login again.\"}")
                     .build();
         }
+		
+        String userTarget = request.targetUsername;
+        String newRole = request.newRole;
+        DecodedJWT jwt = JWTToken.extractJWT(token);
+		String username = jwt.getSubject();
+		String role = jwt.getClaim("role").asString();
+
+        LOG.fine("Attempt to modify the role for user: " + username);
 
         if (!Roles.isValidRole(newRole)) {
             return Response.status(Status.BAD_REQUEST)
@@ -136,9 +144,9 @@ public class ComputationResource {
         }
 
         Key logoutKey = datastore.newKeyFactory()
-                .addAncestor(PathElement.of("User", token.username))
+                .addAncestor(PathElement.of("User", username))
                 .setKind("RevokedToken")
-                .newKey(token.magicnumber);
+                .newKey(token);
         Entity existingRevokedToken = datastore.get(logoutKey);
         if (existingRevokedToken != null) {
             return Response.status(Status.BAD_REQUEST)
@@ -146,7 +154,7 @@ public class ComputationResource {
                     .build();
         }
 
-        if (Roles.is(token.role, Roles.RU, Roles.VU, Roles.ADLU, Roles.PO, Roles.PRBO)) {
+        if (Roles.is(role, Roles.RU, Roles.VU, Roles.ADLU, Roles.PO, Roles.PRBO)) {
             return Response.status(Status.FORBIDDEN)
                     .entity("{\"message\":\"Permission denied.\"}")
                     .build();
@@ -163,14 +171,14 @@ public class ComputationResource {
 
         String currentRole = targetUser.getString("user_role");
 
-        if (Roles.is(token.role, Roles.SGVBO)) {
+        if (Roles.is(role, Roles.SGVBO)) {
             if (!Roles.is(currentRole, Roles.RU, Roles.VU, Roles.ADLU) ||
                 !Roles.is(newRole, Roles.RU, Roles.VU, Roles.ADLU)) {
                 return Response.status(Status.FORBIDDEN)
                         .entity("{\"message\":\"SGVBO can only change roles among RU, VU, ADLU.\"}")
                         .build();
             }
-        } else if (!Roles.is(token.role, Roles.SYSADMIN, Roles.SYSBO, Roles.SDVBO, Roles.SMBO)) {
+        } else if (!Roles.is(role, Roles.SYSADMIN, Roles.SYSBO, Roles.SDVBO, Roles.SMBO)) {
             return Response.status(Status.FORBIDDEN)
                     .entity("{\"message\":\"Only SYS or SD/SM BO can change other roles.\"}")
                     .build();
@@ -187,81 +195,90 @@ public class ComputationResource {
 
 
 	@POST
-@Path("/changestate")
-@Consumes(MediaType.APPLICATION_JSON)
-@Produces(MediaType.APPLICATION_JSON)
-public Response changeAccountState(ChangeState request) {
-    String userTarget = request.targetUsername;
-    String newState = request.account_state;
-    TokenAuth token = request.token;
-
-    LOG.fine("Attempt to modify account state for user: " + token.username);
-
-    if (System.currentTimeMillis() > token.validateTo) {
-        return Response.status(Status.UNAUTHORIZED)
-                .entity("{\"message\":\"Token expired.\"}").build();
-    }
-
-    Key logoutKey = datastore.newKeyFactory()
-            .addAncestor(PathElement.of("User", token.username))
-            .setKind("RevokedToken")
-            .newKey(token.magicnumber);
-    if (datastore.get(logoutKey) != null) {
-        return Response.status(Status.BAD_REQUEST)
-                .entity("{\"message\":\"Token revoked.\"}").build();
-    }
-
-    if (!Roles.is(token.role, Roles.SYSADMIN, Roles.SYSBO, Roles.SGVBO, Roles.SDVBO, Roles.SMBO)) {
-        return Response.status(Status.FORBIDDEN)
-                .entity("{\"message\":\"Permission denied.\"}").build();
-    }
-
-    if (!newState.equals("ATIVADO") && !newState.equals("INATIVO") &&
-        !newState.equals("SUSPENSO") && !newState.equals("P-REMOVER")) {
-        return Response.status(Status.BAD_REQUEST)
-                .entity("{\"message\":\"Invalid state.\"}").build();
-    }
-
-    Key userKey = datastore.newKeyFactory().setKind("User").newKey(userTarget);
-    Entity user = datastore.get(userKey);
-    if (user == null) {
-        return Response.status(Status.NOT_FOUND)
-                .entity("{\"message\":\"User not found.\"}").build();
-    }
-
-    String userRole = user.getString("user_role").toUpperCase();
-
-    // Regras por role de quem altera estado
-    if (Roles.is(token.role, Roles.SGVBO)) {
-        if (!Roles.is(userRole, Roles.RU, Roles.VU, Roles.ADLU)) {
-            return Response.status(Status.FORBIDDEN)
-                    .entity("{\"message\":\"SGVBO can only change state of RU, VU, ADLU users.\"}").build();
+	@Path("/changestate")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response changeAccountState(ChangeState request) {
+		String token = request.token;
+		if (!JWTToken.validateJWT(token)) {
+            return Response.status(Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Token is expired. Please login again.\"}")
+                    .build();
         }
-    }
-
-    // Validação passiva de campos na ativação (apenas loga, não bloqueia)
-    if (newState.equals("ATIVADO")) {
-        String[] requiredFields = {
-            "user_email", "user_name", "user_pwd", "user_phone1", "user_nif", "user_cc",
-            "user_cc_issue_date", "user_cc_issue_place", "user_cc_validity", "user_birth_date",
-            "user_nationality", "user_residence_country", "user_address", "user_postal_code"
-        };
-
-        for (String field : requiredFields) {
-            if (!user.contains(field) || user.getString(field).isBlank()) {
-                LOG.warning("Activating user '" + userTarget + "' with missing or blank field: " + field);
-                // Não bloqueia, apenas avisa
-            }
-        }
-    }
-
-    Entity updated = Entity.newBuilder(user)
-            .set("user_account_state", newState)
-            .build();
-    datastore.put(updated);
-    LOG.info("User " + userTarget + " state changed to " + newState);
-    return Response.ok("{\"message\":\"State changed successfully.\"}").build();
-}
+		
+	    String userTarget = request.targetUsername;
+	    String newState = request.account_state;
+	    DecodedJWT jwt = JWTToken.extractJWT(token);
+		String username = jwt.getSubject();
+		String role = jwt.getClaim("role").asString();
+	
+	    LOG.fine("Attempt to modify account state for user: " + username);
+	
+	    if (!JWTToken.validateJWT(token)) {
+	        return Response.status(Status.UNAUTHORIZED)
+	                .entity("{\"message\":\"Token expired.\"}").build();
+	    }
+	
+	    Key logoutKey = datastore.newKeyFactory()
+	            .addAncestor(PathElement.of("User", username))
+	            .setKind("RevokedToken")
+	            .newKey(token);
+	    if (datastore.get(logoutKey) != null) {
+	        return Response.status(Status.BAD_REQUEST)
+	                .entity("{\"message\":\"Token revoked.\"}").build();
+	    }
+	
+	    if (!Roles.is(role, Roles.SYSADMIN, Roles.SYSBO, Roles.SGVBO, Roles.SDVBO, Roles.SMBO)) {
+	        return Response.status(Status.FORBIDDEN)
+	                .entity("{\"message\":\"Permission denied.\"}").build();
+	    }
+	
+	    if (!newState.equals("ATIVADO") && !newState.equals("INATIVO") &&
+	        !newState.equals("SUSPENSO") && !newState.equals("P-REMOVER")) {
+	        return Response.status(Status.BAD_REQUEST)
+	                .entity("{\"message\":\"Invalid state.\"}").build();
+	    }
+	
+	    Key userKey = datastore.newKeyFactory().setKind("User").newKey(userTarget);
+	    Entity user = datastore.get(userKey);
+	    if (user == null) {
+	        return Response.status(Status.NOT_FOUND)
+	                .entity("{\"message\":\"User not found.\"}").build();
+	    }
+	
+	    String userRole = user.getString("user_role").toUpperCase();
+	
+	    // Regras por role de quem altera estado
+	    if (Roles.is(role, Roles.SGVBO)) {
+	        if (!Roles.is(userRole, Roles.RU, Roles.VU, Roles.ADLU)) {
+	            return Response.status(Status.FORBIDDEN)
+	                    .entity("{\"message\":\"SGVBO can only change state of RU, VU, ADLU users.\"}").build();
+	        }
+	    }
+	
+	    // Validação passiva de campos na ativação (apenas loga, não bloqueia)
+	    if (newState.equals("ATIVADO")) {
+	        String[] requiredFields = {
+	            "user_email", "user_name", "user_pwd", "user_phone1", "user_nif", "user_cc",
+	            "user_cc_issue_date", "user_cc_issue_place", "user_cc_validity", "user_birth_date",
+	            "user_nationality", "user_residence_country", "user_address", "user_postal_code"
+	        };
+	
+	        for (String field : requiredFields) {
+	            if (!user.contains(field) || user.getString(field).isBlank()) {
+	                LOG.warning("Activating user '" + userTarget + "' with missing or blank field: " + field);
+	                // Não bloqueia, apenas avisa
+	            }
+	        }
+	    }
+	
+	    Entity updated = Entity.newBuilder(user)
+	            .set("user_account_state", newState)
+	            .build();
+	    datastore.put(updated);
+	    LOG.info("User " + userTarget + " state changed to " + newState);
+	    return Response.ok("{\"message\":\"State changed successfully.\"}").build();
+	}
 
 
 	@POST
@@ -269,22 +286,25 @@ public Response changeAccountState(ChangeState request) {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response removeAccount(RemoveAccount request) {
-        String userTarget = request.targetUsername;
-        TokenAuth token = request.token;
-
-        LOG.fine("Attempt to remove the account for user: " + token.username);
-
-        // Step 1: Validate token expiration
-        if (System.currentTimeMillis() > token.validateTo) {
+		String token = request.token;
+		if (!JWTToken.validateJWT(token)) {
             return Response.status(Status.UNAUTHORIZED)
-                    .entity("{\"message\":\"Token expired.\"}").build();
+                    .entity("{\"message\":\"Token is expired. Please login again.\"}")
+                    .build();
         }
+		
+		DecodedJWT jwt = JWTToken.extractJWT(token);
+		String username = jwt.getSubject();
+		String role = jwt.getClaim("role").asString();
+        String userTarget = request.targetUsername;
+
+        LOG.fine("Attempt to remove the account for user: " + username);
 
         // Step 2: Check if the token is valid by looking for it in the datastore
         Key logoutKey = datastore.newKeyFactory()
-                .addAncestor(PathElement.of("User", token.username))
+                .addAncestor(PathElement.of("User", username))
                 .setKind("RevokedToken")
-                .newKey(token.magicnumber);
+                .newKey(token);
         if (datastore.get(logoutKey) != null) {
             return Response.status(Status.BAD_REQUEST)
                     .entity("{\"message\":\"Token revoked.\"}").build();
@@ -302,12 +322,12 @@ public Response changeAccountState(ChangeState request) {
         String targetRole = targetUser.getString("user_role").toUpperCase();
 
         // Step 4: Role verification
-        if (Roles.is(token.role, Roles.RU, Roles.VU, Roles.PO, Roles.PRBO, Roles.ADLU)) {
+        if (Roles.is(role, Roles.RU, Roles.VU, Roles.PO, Roles.PRBO, Roles.ADLU)) {
             return Response.status(Status.FORBIDDEN)
                     .entity("{\"message\":\"You are not allowed to remove accounts.\"}").build();
         }
 
-        if (Roles.is(token.role, Roles.SGVBO)) {
+        if (Roles.is(role, Roles.SGVBO)) {
             if (!Roles.is(targetRole, Roles.RU, Roles.VU, Roles.ADLU)) {
                 return Response.status(Status.FORBIDDEN)
                         .entity("{\"message\":\"SGVBO can only remove RU, VU, ADLU accounts.\"}").build();
@@ -316,7 +336,7 @@ public Response changeAccountState(ChangeState request) {
 
         // Step 5: Proceed with deletion
         datastore.delete(userKey);
-        LOG.info("User " + userTarget + " removed by " + token.username);
+        LOG.info("User " + userTarget + " removed by " + username);
         return Response.ok("{\"message\":\"User " + userTarget + " successfully removed.\"}").build();
     }
 
@@ -324,22 +344,26 @@ public Response changeAccountState(ChangeState request) {
     @Path("/changeattributes")
     @Produces(MediaType.APPLICATION_JSON)
     public Response changeAttributes(ChangeAttributes request) {
+		String token = request.token;
+		if (!JWTToken.validateJWT(token)) {
+            return Response.status(Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Token is expired. Please login again.\"}")
+                    .build();
+        }
+		
+		DecodedJWT jwt = JWTToken.extractJWT(token);
+		String username = jwt.getSubject();
+		String role = jwt.getClaim("role").asString();
         String userTarget = request.targetUsername;
         Map<String, String> newAttributes = request.attributes;
-        TokenAuth token = request.token;
-        LOG.fine("Attempt to modify the attributes for user: " + token.username);
-
-        // Step 1: Validate token expiration
-        if (System.currentTimeMillis() > token.validateTo) {
-            return Response.status(Status.UNAUTHORIZED)
-                    .entity("{\"message\":\"Token expired.\"}").build();
-        }
+        
+        LOG.fine("Attempt to modify the attributes for user: " +  username);
 
         // Step 2: Token revocation check
         Key logoutKey = datastore.newKeyFactory()
-                .addAncestor(PathElement.of("User", token.username))
+                .addAncestor(PathElement.of("User", username))
                 .setKind("RevokedToken")
-                .newKey(token.magicnumber);
+                .newKey(token);
         if (datastore.get(logoutKey) != null) {
             return Response.status(Status.BAD_REQUEST)
                     .entity("{\"message\":\"Token revoked.\"}").build();
@@ -356,13 +380,13 @@ public Response changeAccountState(ChangeState request) {
         String targetRole = targetUser.getString("user_role").toUpperCase();
 
         // Step 4: Restrição de alteração por role do requester
-        if (Roles.is(token.role, Roles.RU, Roles.VU, Roles.PO, Roles.PRBO)) {
+        if (Roles.is(role, Roles.RU, Roles.VU, Roles.PO, Roles.PRBO)) {
             return Response.status(Status.FORBIDDEN)
                     .entity("{\"message\":\"Role not authorized to modify attributes.\"}").build();
         }
 
-        if (Roles.is(token.role, Roles.ADLU)) {
-            if (!token.username.equals(userTarget)) {
+        if (Roles.is(role, Roles.ADLU)) {
+            if (!username.equals(userTarget)) {
                 return Response.status(Status.FORBIDDEN)
                         .entity("{\"message\":\"You can only modify your own account.\"}").build();
             }
@@ -374,7 +398,7 @@ public Response changeAccountState(ChangeState request) {
             }
         }
 
-        if (Roles.is(token.role, Roles.SGVBO)) {
+        if (Roles.is(role, Roles.SGVBO)) {
             if (!Roles.is(targetRole, Roles.RU, Roles.VU, Roles.ADLU)) {
                 return Response.status(Status.FORBIDDEN)
                         .entity("{\"message\":\"SGVBO can only modify attributes of RU, VU, or ADLU.\"}").build();
@@ -396,7 +420,7 @@ public Response changeAccountState(ChangeState request) {
             }
             datastore.put(builder.build());
             txn.commit();
-            LOG.info("Attributes for " + userTarget + " updated by " + token.username);
+            LOG.info("Attributes for " + userTarget + " updated by " + username);
             return Response.ok("{\"message\":\"Attributes updated successfully.\"}").build();
         } catch (Exception e) {
             txn.rollback();
@@ -413,22 +437,31 @@ public Response changeAccountState(ChangeState request) {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response changePassword(ChangePassword request) {
+		String token = request.token;
+		if (!JWTToken.validateJWT(token)) {
+            return Response.status(Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Token is expired. Please login again.\"}")
+                    .build();
+        }
+		
+		DecodedJWT jwt = JWTToken.extractJWT(token);
+		String username = jwt.getSubject();
+		String role = jwt.getClaim("role").asString();
         String password = request.currentPassword;
         String newPassword = request.newPassword;
         String confirmPassword = request.confirmPassword;
-        TokenAuth token = request.token;
 
-        LOG.fine("Attempt to change password for user: " + token.username);
+        LOG.fine("Attempt to change password for user: " + username);
 
-        if (System.currentTimeMillis() > token.validateTo) {
+        if (!JWTToken.validateJWT(token)) {
             return Response.status(Status.UNAUTHORIZED)
                     .entity("{\"message\":\"Token expired.\"}").build();
         }
 
         Key logoutKey = datastore.newKeyFactory()
-                .addAncestor(PathElement.of("User", token.username))
+                .addAncestor(PathElement.of("User", username))
                 .setKind("RevokedToken")
-                .newKey(token.magicnumber);
+                .newKey(token);
         if (datastore.get(logoutKey) != null) {
             return Response.status(Status.BAD_REQUEST)
                     .entity("{\"message\":\"Token revoked.\"}").build();
@@ -439,7 +472,7 @@ public Response changeAccountState(ChangeState request) {
                     .entity("{\"message\":\"New password and confirmation do not match.\"}").build();
         }
 
-        Key userKey = datastore.newKeyFactory().setKind("User").newKey(token.username);
+        Key userKey = datastore.newKeyFactory().setKind("User").newKey(username);
         Entity user = datastore.get(userKey);
 
         if (user == null) {
@@ -465,27 +498,36 @@ public Response changeAccountState(ChangeState request) {
     @Path("/deleteaccount")
     @Produces(MediaType.APPLICATION_JSON)
     public Response deleteAccountRequest(RemoveAccount request) {
+        String token = request.token;
+        if (!JWTToken.validateJWT(token)) {
+            return Response.status(Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Token is expired. Please login again.\"}")
+                    .build();
+        }
+        
+    	DecodedJWT jwt = JWTToken.extractJWT(token);
+		String username = jwt.getSubject();
+		String role = jwt.getClaim("role").asString();
         String userTarget = request.targetUsername;
         String newState = "P-REMOVER";
-        TokenAuth token = request.token;
 
-        LOG.fine("Request to delete own account state for user: " + token.username);
+        LOG.fine("Request to delete own account state for user: " + username);
 
-        if (System.currentTimeMillis() > token.validateTo) {
+        if (!JWTToken.validateJWT(token)) {
             return Response.status(Status.UNAUTHORIZED)
                     .entity("{\"message\":\"Token expired.\"}").build();
         }
 
         Key logoutKey = datastore.newKeyFactory()
-                .addAncestor(PathElement.of("User", token.username))
+                .addAncestor(PathElement.of("User", username))
                 .setKind("RevokedToken")
-                .newKey(token.magicnumber);
+                .newKey(token);
         if (datastore.get(logoutKey) != null) {
             return Response.status(Status.BAD_REQUEST)
                     .entity("{\"message\":\"Token revoked.\"}").build();
         }
 
-        if (!token.username.equals(userTarget)) {
+        if (!username.equals(userTarget)) {
             return Response.status(Status.FORBIDDEN)
                     .entity("{\"message\":\"You can only request deletion of your own account.\"}").build();
         }

@@ -6,7 +6,7 @@ public class ChangeAttributes {
 
     public String targetUsername;
     public Map<String, String> attributes;
-    public TokenAuth token;
+    public String token;
     public ChangeAttributes() {
     }
 

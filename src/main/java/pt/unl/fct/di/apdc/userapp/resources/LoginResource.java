@@ -11,6 +11,8 @@ import com.google.cloud.datastore.Entity;
 import com.google.cloud.datastore.Key;
 import com.google.cloud.datastore.KeyFactory;
 
+import jakarta.json.Json;
+import jakarta.json.JsonObject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
@@ -76,11 +78,14 @@ public class LoginResource {
                         .entity("{\"message\":\"Role inválido.\"}")
                         .build();
             }
+            
+            String foto = user.contains("user_photo") ? user.getString("user_photo") : null;
 
             // Prepara claims JWT
             Map<String, Object> fields = new HashMap<>();
             fields.put("role", role);
-            fields.put("email", user.contains("user_email") ? user.getString("user_email") : "no-email@domain.com");
+            fields.put("username", data.username);
+            fields.put("photo", foto != null ? foto : "");
 
             // Cria token JWT
             String token = JWTToken.createJWT(data.username, fields);
@@ -98,9 +103,16 @@ public class LoginResource {
                     .secure(false) // true em produção com HTTPS
                     .httpOnly(true)
                     .build();
+            
+            JsonObject responseData = Json.createObjectBuilder()
+                    .add("username", data.username)
+                    .add("role", role)
+                    .add("photo", foto != null ? foto : "")
+                    .add("token", token)
+                    .build();
 
             LOG.info("Login successful for user: " + data.username);
-            return Response.ok().cookie(cookie).entity("{\"token\":\"" + token + "\"}").build();
+            return Response.ok().cookie(cookie).entity(responseData.toString()).build();
 
         } catch (Exception e) {
             LOG.severe("Error during login: " + e.getClass().getSimpleName() + " - " + e.getMessage());
