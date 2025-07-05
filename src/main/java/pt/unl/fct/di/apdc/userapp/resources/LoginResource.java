@@ -10,9 +10,9 @@ import com.google.cloud.datastore.DatastoreOptions;
 import com.google.cloud.datastore.Entity;
 import com.google.cloud.datastore.Key;
 import com.google.cloud.datastore.KeyFactory;
+import com.google.gson.JsonObject;
 
 import jakarta.json.Json;
-import jakarta.json.JsonObject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
@@ -104,12 +104,11 @@ public class LoginResource {
                     .httpOnly(true)
                     .build();
             
-            JsonObject responseData = Json.createObjectBuilder()
-                    .add("username", data.username)
-                    .add("role", role)
-                    .add("photo", foto != null ? foto : "")
-                    .add("token", token)
-                    .build();
+            JsonObject responseData = new JsonObject();
+            responseData.addProperty("username", data.username);
+            responseData.addProperty("role", role);
+            responseData.addProperty("photo", foto != null ? foto : "");
+            responseData.addProperty("token", token);
 
             LOG.info("Login successful for user: " + data.username);
             return Response.ok().cookie(cookie).entity(responseData.toString()).build();
