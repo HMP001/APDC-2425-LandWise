@@ -26,6 +26,8 @@
     <include path="/**.ttf" expiration="1m" />  <!-- 1 minute, normal is 12h or more -->
     <include path="/**.ico" expiration="1m" />  <!-- 1 minute, normal is 12h or more -->
     <include path="/**.cur" expiration="1m" />  <!-- 1 minute, normal is 12h or more -->
+    <include path="/index.html" />
+    <include path="/static/**" />
   </static-files>
   
 </appengine-web-app>

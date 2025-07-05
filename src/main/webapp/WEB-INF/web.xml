@@ -4,23 +4,11 @@
 	xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/javaee http://xmlns.jcp.org/xml/ns/javaee/web-app_3_1.xsd"
 	version="3.1">
 
-	<display-name>APDC-2025-Individual-59324</display-name>
+	<display-name>APDC-2025-Beta</display-name>
 
 	<welcome-file-list>
 		<welcome-file>index.html</welcome-file>
 	</welcome-file-list>
-	
-	
-	<error-page>
-		<error-code>500</error-code>
-		<location>/error/500.html</location>
-	</error-page>
-	
-	<error-page>
-		<error-code>404</error-code>
-		<location>/error/404.html</location>
-	</error-page>
-	
 
 	<servlet>
 		<servlet-name>MainServices</servlet-name>
@@ -50,11 +38,28 @@
 			<param-name>jersey.config.server.tracing.type</param-name>
 			<param-value>ALL</param-value> <!-- This is a debug utility that should be disabled when code goes to production -->
 		</init-param>
+
 		<load-on-startup>1</load-on-startup>
 	</servlet>
 	<servlet-mapping>
 		<servlet-name>MainServices</servlet-name>
 		<url-pattern>/rest/*</url-pattern>
+	</servlet-mapping>
+
+	<filter>
+			<filter-name>ReactRouterFilter</filter-name>
+			<filter-class>pt.unl.fct.di.apdc.userapp.filters.ReactRouterFilter</filter-class>
+		</filter>
+
+		<filter-mapping>
+			<filter-name>ReactRouterFilter</filter-name>
+			<url-pattern>/*</url-pattern>
+		</filter-mapping>
+
+	<!-- Static files -->
+	<servlet-mapping>
+			<servlet-name>default</servlet-name>
+			<url-pattern>/static/*</url-pattern>
 	</servlet-mapping>
 	
 </web-app>
