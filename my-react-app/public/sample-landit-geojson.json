@@ -12,20 +12,20 @@
     "posa_description": "Agricultural area classification",
     "posp_code": "POSP456",
     "posp_description": "Land management operations",
-    "aigp": {
-      "id": "AIGP001",
-      "name": "Sample AIGP Organization",
-      "address": "123 Agriculture Street, Lisbon, Portugal",
-      "nif": "123456789"
-    },
+    "aigp": [
+      "Place1",
+      "Place2"
+    ],
     "operations": [
       {
         "operation_code": "OP001",
-        "operation_description": "Soil analysis and testing"
+        "operation_description": "Soil analysis and testing",
+        "area_ha": 1.00
       },
       {
         "operation_code": "OP002",
-        "operation_description": "Crop rotation planning"
+        "operation_description": "Crop rotation planning",
+        "area_ha": 1.00
       }
     ]
   },
@@ -68,9 +68,10 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Agricultural Plot 2",
-        "area": 18.2,
-        "crop_type": "Corn"
+        "polygon_id": 1,
+        "UI_id": 1,
+        "aigp": "Place1",
+        "rural_property_id": "1"
       },
       "geometry": {
         "type": "Polygon",
