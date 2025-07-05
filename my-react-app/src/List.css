@@ -1,0 +1,297 @@
+.user-list-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+  background-color: #f8f9fa;
+  min-height: 100vh;
+}
+
+.user-list-header {
+  text-align: center;
+  margin-bottom: 2rem;
+  color: #333;
+  font-size: 2.5rem;
+  font-weight: 600;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.users-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 1.5rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.user-card {
+  background: linear-gradient(135deg, #fff 0%, #f8f9fa 100%);
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e9ecef;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.user-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #222 0%, #555 50%, #222 100%);
+}
+
+.user-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.user-avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #222 0%, #555 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-bottom: 1rem;
+  text-transform: uppercase;
+}
+
+.user-info {
+  flex-grow: 1;
+}
+
+.user-name {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.user-email {
+  color: #666;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.user-username {
+  color: #888;
+  font-size: 0.9rem;
+  font-style: italic;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.icon {
+  width: 16px;
+  height: 16px;
+  opacity: 0.7;
+}
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+  color: #666;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #222;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.error-container {
+  text-align: center;
+  padding: 2rem;
+  color: #dc3545;
+  background-color: #f8d7da;
+  border: 1px solid #f5c6cb;
+  border-radius: 8px;
+  margin: 2rem auto;
+  max-width: 600px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 3rem;
+  color: #666;
+}
+
+.empty-state-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+/* Dynamic field styling */
+.user-field {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.user-field:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.field-label {
+  font-weight: 600;
+  color: #555;
+  min-width: 80px;
+  font-size: 0.9rem;
+}
+
+.field-value {
+  text-align: right;
+  flex-grow: 1;
+  margin-left: 1rem;
+}
+
+.field-empty {
+  color: #999;
+  font-style: italic;
+}
+
+.field-email {
+  color: #007bff;
+  text-decoration: none;
+}
+
+.field-email:hover {
+  text-decoration: underline;
+}
+
+.field-url {
+  color: #28a745;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.field-url:hover {
+  text-decoration: underline;
+}
+
+.field-phone {
+  color: #6f42c1;
+  text-decoration: none;
+}
+
+.field-phone:hover {
+  text-decoration: underline;
+}
+
+.field-boolean.true {
+  color: #28a745;
+  font-weight: bold;
+}
+
+.field-boolean.false {
+  color: #dc3545;
+  font-weight: bold;
+}
+
+.field-object {
+  font-family: monospace;
+  font-size: 0.8rem;
+  background: #f8f9fa;
+  padding: 0.25rem;
+  border-radius: 4px;
+  word-break: break-all;
+}
+
+.field-text {
+  color: #333;
+}
+
+/* Special styling for important fields */
+.user-field-name .field-label,
+.user-field-username .field-label {
+  color: #222;
+  font-weight: 700;
+}
+
+.user-field-email .field-value {
+  font-weight: 500;
+}
+
+.user-field-role .field-value {
+  background: #e9ecef;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .user-list-container {
+    padding: 1rem;
+  }
+
+  .users-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .user-list-header {
+    font-size: 2rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .user-card {
+    padding: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .user-list-container {
+    padding: 0.5rem;
+  }
+
+  .user-card {
+    padding: 1rem;
+  }
+
+  .user-avatar {
+    width: 50px;
+    height: 50px;
+    font-size: 1.2rem;
+  }
+}

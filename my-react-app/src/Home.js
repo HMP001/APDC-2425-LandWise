@@ -4,19 +4,7 @@ import { logoutAndRedirect } from './Login';
 import CheckRequests from './CheckRequests';
 import { SelectWorksheet } from './WorkSheet';
 import { useState } from 'react';
-
-function parseToken(token) {
-  try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function (c) {
-      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
-    return JSON.parse(jsonPayload);
-  } catch (e) {
-    return { username: 'Unknown User' };
-  }
-};
+import { getJWTToken } from './Token';
 
 async function Logout(token, navigate) {
   try {
@@ -40,32 +28,40 @@ async function Logout(token, navigate) {
 
 export default function Home() {
   const navigate = useNavigate();
-  const token = sessionStorage.getItem('authToken');
   const [worksheetModal, setWorksheetModal] = useState(null);
-  let username = '';
-  let role = '';
 
-  if (token) {
-    try {
-      username = JSON.parse(token).username; // Parse token as JSON
-      role = JSON.parse(token).role || 'enduser'; // Default to 'user' if role is not present
-    } catch (error) {
-      username = parseToken(token).username || '';
-    }
-  }
+  const token = getJWTToken();
+  console.log("Token data:", token);
+
+  // Extract user data directly from JWT token (already parsed with defaults)
+  const username = token?.username || '';
+  const role = token?.role || '';
+  const photoUrl = token?.photo_url || '';
 
   return (
     <div className="home-root">
       <div className="home-topbar">
         <img src="/Logo.jpeg" alt="Logo" className="home-logo" />
         <div className="home-top-right">
-          {token ? (
+          {token && role !== 'VU' ? (
             <>
-              <span>Logged in as: {username}</span>
               <button className="btn btn-danger btn-small" onClick={() => { Logout(token, navigate); }}>Logout</button>
+              <span>Logged in as: {username}</span>
+              {photoUrl && (
+                <div className="profile-picture-container">
+                  <img
+                    src={photoUrl}
+                    alt="Profile"
+                    className="profile-picture"
+                    onClick={() => window.open(photoUrl, '_blank')}
+                    title="Click to view full size"
+                  />
+                </div>
+              )}
             </>
           ) : (
             <>
+              <span>Currently navigating as Visitor</span>
               <button className="btn btn-primary btn-small" onClick={() => navigate('/login')}>Login</button>
               <button className="btn btn-success btn-small" onClick={() => navigate('/register')}>Register</button>
             </>

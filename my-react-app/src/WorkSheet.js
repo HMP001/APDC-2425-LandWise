@@ -5,6 +5,7 @@ import { topBar } from './TopBar';
 import './WorkSheet.css';
 import { FaChevronUp, FaChevronDown } from 'react-icons/fa';
 import CheckRequests from './CheckRequests';
+import { getJWTToken } from './Token';
 
 async function fetchWorkSheet(token, id) {
   try {
@@ -12,7 +13,7 @@ async function fetchWorkSheet(token, id) {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': token
+        'Authorization': token.raw // Use raw token for authorization
       }
     });
     let error = CheckRequests(response, token);
@@ -561,7 +562,7 @@ export default function WorkSheet({ mode }) {
   const [initialForm, setInitialForm] = useState(null);
   const [error, setError] = useState('');
   const navigate = useNavigate();
-  const token = sessionStorage.getItem('authToken');
+  const token = getJWTToken();
 
   useEffect(() => {
     if (!token) {
@@ -679,9 +680,9 @@ export default function WorkSheet({ mode }) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': token
+          'Authorization': token.raw
         },
-        body: JSON.stringify(token, formDataForBackend)
+        body: JSON.stringify(token.raw, formDataForBackend)
       });
       if (response.ok) {
         const data = await response.json();
@@ -755,7 +756,7 @@ export function ViewWorkSheet() {
   });
   const [error, setError] = useState('');
   const navigate = useNavigate();
-  const token = sessionStorage.getItem('authToken');
+  const token = getJWTToken();
 
   useEffect(() => {
     if (!token) {
@@ -812,7 +813,7 @@ export function ListWorkSheets() {
   const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState(null); // Track which worksheet is expanded
   const navigate = useNavigate();
-  const token = sessionStorage.getItem('authToken');
+  const token = getJWTToken();
 
   useEffect(() => {
     if (!token) {
@@ -827,9 +828,9 @@ export function ListWorkSheets() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': token
+            'Authorization': token.raw // Use raw token for authorization
           },
-          body: token
+          body: JSON.stringify({ token: token.raw })
         });
         const errorMsg = CheckRequests(response, token, navigate);
         if (!response.ok) {
@@ -1348,7 +1349,7 @@ export function UploadWorkSheet() {
   const [showPreview, setShowPreview] = useState(false);
   const [detectedFormat, setDetectedFormat] = useState('');
   const navigate = useNavigate();
-  const token = sessionStorage.getItem('authToken');
+  const token = getJWTToken();
 
   if (!token) {
     setTimeout(() => {
@@ -1437,7 +1438,7 @@ export function UploadWorkSheet() {
       const response = await fetch("/rest/worksheet/upload", {
         method: 'POST',
         headers: {
-          'Authorization': token
+          'Authorization': token.raw // Use raw token for authorization
         },
         body: formData
       });
@@ -1941,4 +1942,52 @@ async function convertGeoJSONToWorksheetWithCRS(geoJsonData, detectedCRS) {
 
   // Use the existing conversion function with converted coordinates
   return convertGeoJSONToWorksheet(convertedGeoJSON);
+}
+
+export function DeleteWorkSheet({ worksheetId }) {
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+  const navigate = useNavigate();
+  const token = getJWTToken();
+
+  if (!token) {
+    setTimeout(() => {
+      navigate('/login');
+    }, 2000);
+    return;
+  }
+
+  const handleDelete = async () => {
+    try {
+      const response = await fetch(`/rest/worksheet/${worksheetId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': token.raw // Use raw token for authorization
+        }
+      });
+
+      if (response.ok) {
+        setSuccess(true);
+        setTimeout(() => {
+          navigate('/'); // Redirect to the worksheets list or home page
+        }, 2000);
+      } else {
+        const errorData = await response.json();
+        setError(errorData.message || "Failed to delete worksheet. Please try again later.");
+      }
+    } catch (error) {
+      console.error("Error deleting worksheet:", error);
+      setError("An error occurred while deleting the worksheet. Please try again later.");
+    }
+  };
+
+  return (
+    <div className="delete-worksheet-container">
+      <h2>Delete WorkSheet</h2>
+      <p>Are you sure you want to delete the worksheet with ID: <strong>{worksheetId}</strong>?</p>
+      <button onClick={handleDelete} className="btn btn-danger">Delete</button>
+      {error && <div className="form-error">{error}</div>}
+      {success && <div className="form-success">Worksheet deleted successfully!</div>}
+    </div>
+  );
 }

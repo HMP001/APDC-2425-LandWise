@@ -3,11 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { topBar } from './TopBar';
 import CheckRequests from './CheckRequests';
 import './AuthForm.css';
+import roles from './roles'; // Assuming roles.js exports the roles object
+import { getJWTToken } from './Token';
 
 async function fetchAttributes(token, navigate) {
   const response = await fetch('/api/user', {
     headers: {
-      'Authorization': token
+      'Content-Type': 'application/json',
+      'Authorization': token.raw // Use raw token for authorization
     }
   });
   CheckRequests(response, token, navigate);
@@ -66,19 +69,62 @@ const attributesForms = ({
     <form onSubmit={handleSubmit}>
       <div className="form-grid">
         {attributes.map((attribute, index) => (
-          <div key={index}>
-            <label className="form-label" htmlFor={`attribute-${index}`}>{attribute.label}:</label>
-            <input
-              className="form-input"
-              id={`attribute-${index}`}
-              type={attribute.type}
-              name={attribute.name}
-              value={attribute.value}
-              onChange={changeData}
-              required={false}
-              autoComplete={attribute.autoComplete}
-            />
-          </div>
+          <>
+            {attribute.name === 'role' ? (
+              <div key={index}>
+                <label className="form-label" htmlFor={`attribute-${index}`}>{attribute.label}:</label>
+                <select
+                  className="form-input"
+                  id={`attribute-${index}`}
+                  name={attribute.name}
+                  value={attribute.value}
+                  onChange={changeData}
+                  required={false}
+                >
+                  <option value="">Select a role</option>
+                  {Object.entries(roles)
+                    .filter(([key]) => key !== 'root' && key !== 'visitor')
+                    .map(([key, role]) => (
+                      <option key={key} value={role.value}>
+                        {role.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            ) :
+              attribute.name === 'profile' ? (
+                <div key={index}>
+                  <label className="form-label" htmlFor={`attribute-${index}`}>{attribute.label}:</label>
+                  <select
+                    className="form-input"
+                    id={`attribute-${index}`}
+                    type="text"
+                    name={attribute.name}
+                    value={attribute.value}
+                    onChange={changeData}
+                    required={false}
+                  >
+                    <option value="">Select a visibility</option>
+                    <option value="PUBLICO">Public</option>
+                    <option value="PRIVADO">Private</option>
+                  </select>
+                </div>
+              ) : (
+                <div key={index}>
+                  <label className="form-label" htmlFor={`attribute-${index}`}>{attribute.label}:</label>
+                  <input
+                    className="form-input"
+                    id={`attribute-${index}`}
+                    type={attribute.type}
+                    name={attribute.name}
+                    value={attribute.value}
+                    onChange={changeData}
+                    required={false}
+                    autoComplete={attribute.autoComplete}
+                  />
+                </div>
+              )};
+          </>
         ))}
       </div>
       <button className="btn btn-primary btn-large" type="submit">Submit</button>
@@ -88,7 +134,7 @@ const attributesForms = ({
 
 export function Attributes() {
   const navigate = useNavigate();
-  const token = sessionStorage.getItem('authToken');
+  const token = getJWTToken();
   const [attributes, setAttributes] = useState([]);
   const [initialAttributes, setInitialAttributes] = useState([]);
   const [error, setError] = useState('');
@@ -183,7 +229,7 @@ export function Attributes() {
 
 export function ChangePassword() {
   const navigate = useNavigate();
-  const token = sessionStorage.getItem('authToken');
+  const token = getJWTToken();
 
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
@@ -201,7 +247,7 @@ export function ChangePassword() {
     return <p>Error: No authentication token found. Redirecting to log in.</p>;
   }
 
-  const username = JSON.parse(token).username; // Parse token as JSON
+  const username = token.username; // Parse token as JSON
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -217,10 +263,10 @@ export function ChangePassword() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': token
+          'Authorization': token.raw // Use raw token for authorization
         },
         body: JSON.stringify({
-          username: JSON.parse(token).username,
+          username: username,
           password
         })
       });
@@ -302,7 +348,7 @@ export function ChangePassword() {
 
 export function ChangeState() {
   const navigate = useNavigate();
-  const token = sessionStorage.getItem('authToken');
+  const token = getJWTToken();
 
   const [changeUser, setChangeUser] = useState('');
   const [accountState, setAccountState] = useState('');
@@ -321,8 +367,8 @@ export function ChangeState() {
     return <p>Error: No authentication token found. Redirecting to log in.</p>;
   }
 
-  const userRole = JSON.parse(token).role;
-  if (userRole !== 'admin' && userRole !== 'backoffice') {
+  const userRole = token.role;
+  if (userRole !== 'SYSADMIN' && userRole !== 'SYSBO') {
     return <p>You do not have permission to change account state.</p>;
   }
 
@@ -341,7 +387,7 @@ export function ChangeState() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': token
+          'Authorization': token.raw // Use raw token for authorization
         },
         body: JSON.stringify({
           targetUsername: changeUser,
@@ -407,7 +453,7 @@ export function ChangeState() {
 
 export function ChangeRole() {
   const navigate = useNavigate();
-  const token = sessionStorage.getItem('authToken');
+  const token = getJWTToken();
 
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -426,7 +472,7 @@ export function ChangeRole() {
     return <p>Error: No authentication token found. Redirecting to log in.</p>;
   }
 
-  const username = JSON.parse(token).username; // Parse token as JSON
+  const username = token.username;
 
   const handleRoleChange = async (event) => {
     event.preventDefault();
@@ -439,7 +485,7 @@ export function ChangeRole() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': token
+          'Authorization': token.raw // Use raw token for authorization
         },
         body: JSON.stringify({ token, username, role })
       });
@@ -459,7 +505,6 @@ export function ChangeRole() {
     }
   };
 
-  // Implement role change logic here
   return (
     <>
       {topBar(navigate)}
@@ -489,10 +534,13 @@ export function ChangeRole() {
                 onChange={(e) => setRole(e.target.value)}
                 required
               >
-                <option value="">Select a role</option>
-                <option value="admin">Admin</option>
-                <option value="sbo">System Back Office</option>
-                <option value="enduser">End User</option>
+                {Object.entries(roles)
+                  .filter(([key]) => key !== 'root' && key !== 'visitor')
+                  .map(([key, role]) => (
+                    <option key={key} value={role.value}>
+                      {role.name}
+                    </option>
+                  ))}
               </select>
               {success && <p className="success">Role changed successfully!</p>}
               <button className="btn btn-info btn-large" type="submit">Change Role</button>
