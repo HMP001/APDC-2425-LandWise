@@ -1,0 +1,42 @@
+{
+  "reguser": {
+    "name": "Registered User",
+    "value": "RU"
+  },
+  "root": {
+    "name": "System Administrator",
+    "value": "SYSADMIN"
+  },
+  "sysbo": {
+    "name": "System BackOffice",
+    "value": "SYSBO"
+  },
+  "smbo": {
+    "name": "Sheet Manager BackOffice",
+    "value": "SMBO"
+  },
+  "sgvbo": {
+    "name": "Sheet General Viewer BackOffice",
+    "value": "SGVBO"
+  },
+  "sdvbo": {
+    "name": "Sheet Detailed Viewer BackOffice",
+    "value": "SDVBO"
+  },
+  "prbo": {
+    "name": "Partner Representative BackOffice",
+    "value": "PRBO"
+  },
+  "po": {
+    "name": "Partner Operator",
+    "value": "PO"
+  },
+  "adlu": {
+    "name": "Adherent Landowner User",
+    "value": "ADLU"
+  },
+  "visitor": {
+    "name": "Visitor User",
+    "value": "VU"
+  }
+}

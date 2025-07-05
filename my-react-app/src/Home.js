@@ -9,12 +9,12 @@ function parseToken(token) {
   try {
     const base64Url = token.split('.')[1];
     const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function (c) {
       return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
     }).join(''));
     return JSON.parse(jsonPayload);
   } catch (e) {
-    return {username: 'Unknown User'};
+    return { username: 'Unknown User' };
   }
 };
 
@@ -59,34 +59,35 @@ export default function Home() {
       <div className="home-topbar">
         <img src="/Logo.jpeg" alt="Logo" className="home-logo" />
         <div className="home-top-right">
-        {token ? (
-          <>
-            <span>Logged in as: {username}</span>
-            <button onClick={() => {Logout(token, navigate);}}>Logout</button>
-          </>
-        ) : (
-          <>
-            <button onClick={() => navigate('/login')}>Login</button>
-            <button onClick={() => navigate('/register')}>Register</button>
-          </>
-        )}
-      </div>
+          {token ? (
+            <>
+              <span>Logged in as: {username}</span>
+              <button className="btn btn-danger btn-small" onClick={() => { Logout(token, navigate); }}>Logout</button>
+            </>
+          ) : (
+            <>
+              <button className="btn btn-primary btn-small" onClick={() => navigate('/login')}>Login</button>
+              <button className="btn btn-success btn-small" onClick={() => navigate('/register')}>Register</button>
+            </>
+          )}
+        </div>
       </div>
       <div className="home-main">
         <div className="home-sidebar">
           <h3>User</h3>
-          <button onClick={() => navigate('/user/attributes')}>Edit Attributes</button>
-          <button onClick={() => navigate('/user/changePassword')}>Change Password</button>
-          <button onClick={() => navigate('/user/changeRole')}>Change Role</button>
-          <button onClick={() => navigate('/user/changeState')}>Change State</button>
-          <button onClick={() => navigate('/user/listUsers')}>List Users</button>
-          { (role === 'admin' || role === 'smbo') && (
+          <button className="btn btn-primary" onClick={() => navigate('/user/attributes')}>Edit Attributes</button>
+          <button className="btn btn-info" onClick={() => navigate('/user/changePassword')}>Change Password</button>
+          <button className="btn btn-info" onClick={() => navigate('/user/changeRole')}>Change Role</button>
+          <button className="btn btn-info" onClick={() => navigate('/user/changeState')}>Change State</button>
+          <button className="btn btn-outline" onClick={() => navigate('/user/listUsers')}>List Users</button>
+          {(role === 'admin' || role === 'smbo') && (
             <>
               <h3>Worksheets</h3>
-              <button onClick={() => navigate('/worksheet/create')}>Create Worksheet</button>
-              <button onClick={() => setWorksheetModal('edit') }>Edit Worksheet</button>
-              <button onClick={() => setWorksheetModal('view') }>View Worksheet</button>
-              <button onClick={() => navigate('/worksheet/list')}>List Worksheets</button>
+              <button className="btn btn-primary" onClick={() => navigate('/worksheet/create')}>Create Worksheet</button>
+              <button className="btn btn-success" onClick={() => navigate('/worksheet/upload')}>Upload Worksheet</button>
+              <button className="btn btn-info" onClick={() => setWorksheetModal('edit')}>Edit Worksheet</button>
+              <button className="btn btn-info" onClick={() => setWorksheetModal('view')}>View Worksheet</button>
+              <button className="btn btn-outline" onClick={() => navigate('/worksheet/list')}>List Worksheets</button>
             </>
           )}
         </div>

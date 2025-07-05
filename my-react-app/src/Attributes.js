@@ -81,7 +81,7 @@ const attributesForms = ({
           </div>
         ))}
       </div>
-      <button type="submit">Submit</button>
+      <button className="btn btn-primary btn-large" type="submit">Submit</button>
     </form>
   );
 };
@@ -164,19 +164,19 @@ export function Attributes() {
 
   return (
     <>
-    {topBar(navigate)}
-    <div className="AuthForm">
-      {success && <p className="success">Attributes updated successfully!</p>}
-      <header className="AuthForm-header">
-        {error && <p className="error">{error}</p>}
-        <p>Edit your account</p>
-        {attributesForms({
-          attributes,
-          changeData,
-          handleSubmit
-        })}
-      </header>
-    </div>
+      {topBar(navigate)}
+      <div className="AuthForm">
+        {success && <p className="success">Attributes updated successfully!</p>}
+        <header className="AuthForm-header">
+          {error && <p className="error">{error}</p>}
+          <p>Edit your account</p>
+          {attributesForms({
+            attributes,
+            changeData,
+            handleSubmit
+          })}
+        </header>
+      </div>
     </>
   );
 }
@@ -240,67 +240,67 @@ export function ChangePassword() {
 
   return (
     <>
-    {topBar(navigate)}
-    <div className="AuthForm">
-      <header className="AuthForm-header">
-        {error && <p className="error">{error}</p>}
-        <form onSubmit={handleSubmit}>
-          <div className="form-grid">
-            <label className="form-label" htmlFor="username">Username:</label>
-            <input
-              className="form-input"
-              id="username"
-              type="text"
-              name="username"
-              value={username}
-              readOnly
-              disabled={true}
-              autoComplete="username"
-            />
+      {topBar(navigate)}
+      <div className="AuthForm">
+        <header className="AuthForm-header">
+          {error && <p className="error">{error}</p>}
+          <form onSubmit={handleSubmit}>
+            <div className="form-grid">
+              <label className="form-label" htmlFor="username">Username:</label>
+              <input
+                className="form-input"
+                id="username"
+                type="text"
+                name="username"
+                value={username}
+                readOnly
+                disabled={true}
+                autoComplete="username"
+              />
 
-            <label className="form-label" htmlFor="currentPassword">Current Password:</label>
-            <input
-              className="form-input"
-              id="currentPassword"
-              type="password"
-              name="currentPassword"
-              required
-              autoComplete="current-password"
-            />
+              <label className="form-label" htmlFor="currentPassword">Current Password:</label>
+              <input
+                className="form-input"
+                id="currentPassword"
+                type="password"
+                name="currentPassword"
+                required
+                autoComplete="current-password"
+              />
 
-            <label className="form-label" htmlFor="password">New Password:</label>
-            <input
-              className="form-input"
-              id="password"
-              type="password"
-              name="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              autoComplete="new-password"
-            />
+              <label className="form-label" htmlFor="password">New Password:</label>
+              <input
+                className="form-input"
+                id="password"
+                type="password"
+                name="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="new-password"
+              />
 
-            <label className="form-label" htmlFor="confirmation">Confirm Password:</label>
-            <input
-              className="form-input"
-              id="confirmation"
-              type="password"
-              name="confirmation"
-              value={confirmation}
-              onChange={(e) => setConfirmation(e.target.value)}
-              required
-              autoComplete="new-password"
-            />
-          </div>
-          <button type="submit">Change Password</button>
-        </form>
-      </header>
-    </div>
+              <label className="form-label" htmlFor="confirmation">Confirm Password:</label>
+              <input
+                className="form-input"
+                id="confirmation"
+                type="password"
+                name="confirmation"
+                value={confirmation}
+                onChange={(e) => setConfirmation(e.target.value)}
+                required
+                autoComplete="new-password"
+              />
+            </div>
+            <button className="btn btn-warning btn-large" type="submit">Change Password</button>
+          </form>
+        </header>
+      </div>
     </>
   );
 }
 
-export function ChangeState(){
+export function ChangeState() {
   const navigate = useNavigate();
   const token = sessionStorage.getItem('authToken');
 
@@ -397,7 +397,7 @@ export function ChangeState(){
               <option value="desactivated">DESACTIVATED</option>
             </select>
 
-            <button type="submit">Change State</button>
+            <button className="btn btn-secondary btn-large" type="submit">Change State</button>
           </form>
         </header>
       </div>
@@ -462,13 +462,13 @@ export function ChangeRole() {
   // Implement role change logic here
   return (
     <>
-    {topBar(navigate)}
-    <div className="AuthForm">
-      <header className="AuthForm-header">
-        {error && <p className="error">{error}</p>}
-        <h2>Change User Role</h2>
-        <div className="form-grid">
-          <form onSubmit={handleRoleChange}>
+      {topBar(navigate)}
+      <div className="AuthForm">
+        <header className="AuthForm-header">
+          {error && <p className="error">{error}</p>}
+          <h2>Change User Role</h2>
+          <div className="form-grid">
+            <form onSubmit={handleRoleChange}>
               <label className="form-label" htmlFor="username">Username:</label>
               <input
                 className="form-input"
@@ -494,12 +494,12 @@ export function ChangeRole() {
                 <option value="sbo">System Back Office</option>
                 <option value="enduser">End User</option>
               </select>
-            {success && <p className="success">Role changed successfully!</p>}
-            <button type="submit">Change Role</button>
-          </form>
-        </div>
-      </header>
-    </div>
+              {success && <p className="success">Role changed successfully!</p>}
+              <button className="btn btn-info btn-large" type="submit">Change Role</button>
+            </form>
+          </div>
+        </header>
+      </div>
     </>
   );
 }

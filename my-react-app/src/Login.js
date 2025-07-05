@@ -15,18 +15,18 @@ const LoginForm = ({
   return (
     <form onSubmit={handleSubmit}>
       <div className="form-grid">
-      <label className="form-label" htmlFor="username">Username:</label>
-        <input 
-          type="text" 
+        <label className="form-label" htmlFor="username">Username:</label>
+        <input
+          type="text"
           name="username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           required
           autoComplete="username"
         />
-        
-      <label className="form-label" htmlFor="password">Password:</label>
-        <input 
+
+        <label className="form-label" htmlFor="password">Password:</label>
+        <input
           type="password"
           name="password"
           value={password}
@@ -35,7 +35,7 @@ const LoginForm = ({
           autoComplete="current-password"
         />
       </div>
-      <button type="submit">Log In</button>
+      <button className="btn btn-primary btn-large" type="submit">Log In</button>
     </form>
   );
 };
@@ -82,28 +82,28 @@ export default function Login() {
 
   return (
     <>
-    {topBar(navigate)}
-    <div className="AuthForm">
-      <header className="AuthForm-header">
-        <p>
-          Please log in to continue.
-        </p>
-        <LoginForm 
-          username={username}
-          password={password}
-          setUsername={setUsername}
-          setPassword={setPassword}
-          handleSubmit={handleSubmit}
-        />
-        {error && <p className="error">{error}</p>}
-        <div style={{ marginTop: '10px' }}>
-          <span>Don't have an account? </span>
-          <Link to="/rest/register" style={{color: 'blue', textDecoration: 'underline', cursor: 'pointer'}}>
-            Register here
-          </Link>
-        </div>
-      </header>
-    </div>
+      {topBar(navigate)}
+      <div className="AuthForm">
+        <header className="AuthForm-header">
+          <p>
+            Please log in to continue.
+          </p>
+          <LoginForm
+            username={username}
+            password={password}
+            setUsername={setUsername}
+            setPassword={setPassword}
+            handleSubmit={handleSubmit}
+          />
+          {error && <p className="error">{error}</p>}
+          <div style={{ marginTop: '10px' }}>
+            <span>Don't have an account? </span>
+            <Link to="/rest/register" style={{ color: 'blue', textDecoration: 'underline', cursor: 'pointer' }}>
+              Register here
+            </Link>
+          </div>
+        </header>
+      </div>
     </>
   );
 }

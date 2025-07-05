@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './AuthForm.css';
 import { Link } from 'react-router-dom';
 import { topBar } from './TopBar';
+import roles from './roles'; // Assuming roles.js exports the roles object
+import { requiredByRoleToRegister, requiredByRoleToActivate } from './RequiredByRole';
 
 const RegisterForm = ({
-  userData, changeData, handleSubmit
+  userData, changeData, handleSubmit, getFieldRequirement, showWarning
 }) => {
   return (
     <form onSubmit={handleSubmit}>
@@ -18,7 +20,7 @@ const RegisterForm = ({
           name="username"
           value={userData.username}
           onChange={changeData}
-          required
+          required={getFieldRequirement('username') === 'required'}
           autoComplete="username"
         />
 
@@ -30,7 +32,7 @@ const RegisterForm = ({
           name="password"
           value={userData.password}
           onChange={changeData}
-          required
+          required={getFieldRequirement('pwd') === 'required'}
           autoComplete="new-password"
         />
 
@@ -42,7 +44,7 @@ const RegisterForm = ({
           name="confirmation"
           value={userData.confirmation}
           onChange={changeData}
-          required
+          required={getFieldRequirement('pwd') === 'required'}
           autoComplete="new-password"
         />
 
@@ -54,7 +56,7 @@ const RegisterForm = ({
           name="name"
           value={userData.name}
           onChange={changeData}
-          required
+          required={getFieldRequirement('name') === 'required'}
           autoComplete="name"
         />
 
@@ -66,19 +68,19 @@ const RegisterForm = ({
           name="email"
           value={userData.email}
           onChange={changeData}
-          required
+          required={getFieldRequirement('email') === 'required'}
           autoComplete="email"
         />
 
         <label className="form-label" htmlFor="telephone">Phone Number:</label>
-        <input 
+        <input
           className='form-input'
           id="telephone"
           type="tel"
           name="telephone"
           value={userData.telephone}
           onChange={changeData}
-          required
+          required={getFieldRequirement('phone1') === 'required'}
           autoComplete="tel"
         />
 
@@ -103,9 +105,13 @@ const RegisterForm = ({
           onChange={changeData}
           required
         >
-          <option value="RU">End User</option>
-          <option value="SYSBO">System Back Office</option>
-          <option value="SMBO">Back Office</option>
+          {Object.entries(roles)
+            .filter(([key]) => key !== 'root' && key !== 'visitor')
+            .map(([key, role]) => (
+              <option key={key} value={role.value}>
+                {role.name}
+              </option>
+            ))}
         </select>
 
         <label className="form-label" htmlFor="nif">NIF:</label>
@@ -116,7 +122,7 @@ const RegisterForm = ({
           name="nif"
           value={userData.nif}
           onChange={changeData}
-          required
+          required={getFieldRequirement('nif') === 'required'}
           autoComplete="nif"
         />
 
@@ -128,7 +134,7 @@ const RegisterForm = ({
           name="employer"
           value={userData.employer}
           onChange={changeData}
-          required
+          required={getFieldRequirement('employer') === 'required'}
           autoComplete="employer"
         />
 
@@ -140,7 +146,7 @@ const RegisterForm = ({
           name="job"
           value={userData.job}
           onChange={changeData}
-          required
+          required={getFieldRequirement('job') === 'required'}
           autoComplete="job"
         />
 
@@ -152,7 +158,7 @@ const RegisterForm = ({
           name="address"
           value={userData.address}
           onChange={changeData}
-          required
+          required={getFieldRequirement('address') === 'required'}
           autoComplete="address"
         />
 
@@ -164,7 +170,7 @@ const RegisterForm = ({
           name="postal_code"
           value={userData.postal_code}
           onChange={changeData}
-          required
+          required={getFieldRequirement('postalCode') === 'required'}
           autoComplete="postal_code"
         />
 
@@ -176,7 +182,7 @@ const RegisterForm = ({
           name="company_nif"
           value={userData.company_nif}
           onChange={changeData}
-          required
+          required={getFieldRequirement('company_nif') === 'required'}
           autoComplete="company_nif"
         />
 
@@ -188,7 +194,7 @@ const RegisterForm = ({
           name="photo_url"
           value={userData.photo_url}
           onChange={changeData}
-          required
+          required={getFieldRequirement('photo_url') === 'required'}
           autoComplete="photo_url"
         />
 
@@ -200,7 +206,7 @@ const RegisterForm = ({
           name="cc"
           value={userData.cc}
           onChange={changeData}
-          required
+          required={getFieldRequirement('cc') === 'required'}
           autoComplete="cc"
         />
 
@@ -212,7 +218,7 @@ const RegisterForm = ({
           name="cc_issue_date"
           value={userData.cc_issue_date}
           onChange={changeData}
-          required
+          required={getFieldRequirement('emissionCC') === 'required'}
           autoComplete="cc_issue_date"
         />
 
@@ -224,7 +230,7 @@ const RegisterForm = ({
           name="cc_issue_place"
           value={userData.cc_issue_place}
           onChange={changeData}
-          required
+          required={getFieldRequirement('emissionLocalCC') === 'required'}
           autoComplete="cc_issue_place"
         />
 
@@ -236,7 +242,7 @@ const RegisterForm = ({
           name="cc_validity"
           value={userData.cc_validity}
           onChange={changeData}
-          required
+          required={getFieldRequirement('validityCC') === 'required'}
           autoComplete="cc_validity"
         />
 
@@ -248,7 +254,7 @@ const RegisterForm = ({
           name="birth_date"
           value={userData.birth_date}
           onChange={changeData}
-          required
+          required={getFieldRequirement('birthDate') === 'required'}
           autoComplete="birth_date"
         />
 
@@ -260,7 +266,7 @@ const RegisterForm = ({
           name="nationality"
           value={userData.nationality}
           onChange={changeData}
-          required
+          required={getFieldRequirement('nationality') === 'required'}
           autoComplete="nationality"
         />
         <label className="form-label" htmlFor="residence_country">Residence Country</label>
@@ -271,12 +277,14 @@ const RegisterForm = ({
           name="residence_country"
           value={userData.residence_country}
           onChange={changeData}
-          required
+          required={getFieldRequirement('residence') === 'required'}
           autoComplete="residence_country"
         />
 
       </div>
-      <button type="submit">Register</button>
+      {!showWarning && (
+        <button className="btn btn-success btn-large" type="submit">Register</button>
+      )}
     </form>
   );
 };
@@ -310,19 +318,97 @@ function Register() {
   });
 
   const [error, setError] = useState('');
+  const [warning, setWarning] = useState('');
+  const [showWarningConfirm, setShowWarningConfirm] = useState(false);
+
+  // Get required fields for current role
+  const requiredFields = requiredByRoleToRegister[userData.role] || [];
+  const activationFields = requiredByRoleToActivate[userData.role] || [];
+
+  // Function to determine if a field is required, optional with warning, or fully optional
+  const getFieldRequirement = (fieldName) => {
+    return requiredFields.includes(fieldName) ? 'required' : 'optional';
+  };
+
+  // Field mapping from form names to requirement names
+  const fieldMapping = {
+    username: 'username',
+    password: 'pwd',
+    confirmation: 'pwd',
+    email: 'email',
+    name: 'name',
+    telephone: 'phone1',
+    nif: 'nif',
+    employer: 'employer',
+    job: 'job',
+    address: 'address',
+    postal_code: 'postalCode',
+    cc: 'cc',
+    cc_issue_date: 'emissionCC',
+    cc_issue_place: 'emissionLocalCC',
+    cc_validity: 'validityCC',
+    birth_date: 'birthDate',
+    nationality: 'nationality',
+    residence_country: 'residence'
+  };
 
   const handleChange = (e) => {
     setUserData({ ...userData, [e.target.name]: e.target.value });
+    setError('');
+    setWarning('');
+  };
+
+  const validateForm = () => {
+    const missingRequired = [];
+    const missingForActivation = [];
+
+    // Check all form fields
+    Object.keys(fieldMapping).forEach(formField => {
+      const reqField = fieldMapping[formField];
+      const isRequiredForRegistration = requiredFields.includes(reqField);
+      const isRequiredForActivation = activationFields.includes(reqField);
+      const isEmpty = !userData[formField] || userData[formField].trim() === '';
+
+      if (isEmpty) {
+        if (isRequiredForRegistration) {
+          missingRequired.push(formField);
+        } else if (isRequiredForActivation) {
+          // Fields needed for activation but not registration
+          missingForActivation.push(formField);
+        }
+      }
+    });
+
+    return { missingRequired, missingForActivation };
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError("");
+    setWarning("");
 
     if (userData.password !== userData.confirmation) {
       setError('Passwords do not match');
       return;
     }
+
+    const { missingRequired, missingForActivation } = validateForm();
+
+    // Block submission if required fields are missing
+    if (missingRequired.length > 0) {
+      setError(`Please fill in the following required fields: ${missingRequired.join(', ')}`);
+      return;
+    }
+
+    // Show warning for activation fields if not already confirmed
+    if (missingForActivation.length > 0 && !showWarningConfirm) {
+      setWarning(`The following fields are required for account activation: ${missingForActivation.join(', ')}. Your account will be created as INACTIVE until these are filled. Do you want to proceed?`);
+      setShowWarningConfirm(true);
+      return;
+    }
+
+    // Reset warning state
+    setShowWarningConfirm(false);
 
     try {
       const response = await fetch('/rest/register/newaccount', {
@@ -349,7 +435,7 @@ function Register() {
           cc: userData.cc,
           cc_issue_date: userData.cc_issue_date,
           cc_issue_place: userData.cc_issue_place,
-          cc_validity: userData.cc_valid,
+          cc_validity: userData.cc_validity,
           birth_date: userData.birth_date,
           nationality: userData.nationality,
           residence_country: userData.residence_country
@@ -370,24 +456,47 @@ function Register() {
 
   return (
     <>
-    {topBar(navigate)}
-    <div className="AuthForm">
-      <header className="AuthForm-header">
-        <p>Register a new account</p>
-        <RegisterForm
-          userData={userData}
-          changeData={handleChange}
-          handleSubmit={handleSubmit}
-        />
-        {error && <p className="error">{error}</p>}
-        <div style={{ marginTop: '10px' }}>
-          <span>Already have an account? </span>
-          <Link to="/rest/login" style={{color: 'blue', textDecoration: 'underline', cursor: 'pointer'}}>
-            Login here
-          </Link>
-        </div>
-      </header>
-    </div>
+      {topBar(navigate)}
+      <div className="AuthForm">
+        <header className="AuthForm-header">
+          <p>Register a new account</p>
+          <RegisterForm
+            userData={userData}
+            changeData={handleChange}
+            handleSubmit={handleSubmit}
+            getFieldRequirement={(field) => getFieldRequirement(fieldMapping[field] || field)}
+            showWarning={!!warning}
+          />
+          {error && <p className="error" style={{ color: 'red' }}>{error}</p>}
+          {warning && (
+            <div style={{ backgroundColor: '#fff3cd', padding: '10px', margin: '10px 0', border: '1px solid #ffeaa7', borderRadius: '4px' }}>
+              <p style={{ color: '#856404', margin: 0 }}>{warning}</p>
+              <div style={{ marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  style={{ marginRight: '10px', padding: '5px 15px', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                >
+                  Proceed Anyway
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setWarning(''); setShowWarningConfirm(false); }}
+                  style={{ padding: '5px 15px', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                >
+                  Go Back and Fill Fields
+                </button>
+              </div>
+            </div>
+          )}
+          <div style={{ marginTop: '10px' }}>
+            <span>Already have an account? </span>
+            <Link to="/rest/login" style={{ color: 'blue', textDecoration: 'underline', cursor: 'pointer' }}>
+              Login here
+            </Link>
+          </div>
+        </header>
+      </div>
     </>
   );
 }
