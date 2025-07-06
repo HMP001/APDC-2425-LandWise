@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Folhas de Obra - Mapa</title>
+  <meta charset="utf-8">
+  <style>
+    /* garantir tamanho do div */
+    #map {
+      height: 100vh;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Div para o mapa -->
+<div id="map"></div>
+
+<script>
+  // callback que será chamada ao carregar a API
+  async function initMap() {
+    // Inicializa o mapa centrado em Portugal
+    const map = new google.maps.Map(document.getElementById("map"), {
+      zoom: 6,
+      center: { lat: 39.5, lng: -8.0 },
+    });
+
+    try {
+      // Vai buscar os dados ao teu backend
+      const response = await fetch("https://alien-iterator-460014-a0.oa.r.appspot.com/rest/worksheet/mapdata");
+      const data = await response.json();
+
+      // Itera pelas folhas de obra
+      data.forEach(ws => {
+        const coords = ws.polygon.map(coord => ({
+          lat: parseFloat(coord.lat), 
+          lng: parseFloat(coord.lng)
+        }));
+
+        const polygon = new google.maps.Polygon({
+          paths: coords,
+          strokeColor: "#FF0000",
+          strokeOpacity: 0.8,
+          strokeWeight: 2,
+          fillColor: "#FF0000",
+          fillOpacity: 0.35,
+        });
+
+        polygon.setMap(map);
+
+        // Adiciona info window ao clicar no polígono
+        const infoWindow = new google.maps.InfoWindow({
+          content: `<strong>${ws.title}</strong><br>Status: ${ws.status}`,
+        });
+
+        polygon.addListener("click", (event) => {
+          infoWindow.setPosition(event.latLng);
+          infoWindow.open(map);
+        });
+      });
+
+    } catch (error) {
+      console.error("Erro ao carregar dados:", error);
+    }
+  }
+</script>
+
+<!-- Carregar a API Google Maps com callback -->
+<script async
+  src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCezGPnKTx3HfCx30coXZabciGCyywKRes&callback=initMap">
+</script>
+
+</body>
+</html>
