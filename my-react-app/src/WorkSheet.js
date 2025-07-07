@@ -29,79 +29,325 @@ async function fetchWorkSheet(token, id) {
 }
 
 const WorksheetDisplay = ({
-  form,
-  handleChange,
-  handleAigpChange,
-  handleOperationChange,
-  handleRemoveOperation,
-  setForm,
-  onPolygonComplete,
+  worksheet,
+  setWorksheet,
   isViewMode
 }) => {
-  const operations = Array.isArray(form.operations) ? form.operations : [];
-  const drawnOverlaysRef = useRef([]);
+  const operations = Array.isArray(worksheet.operations) ? worksheet.operations : [];
   const mapRef = useRef(null);
   const [hasAutoCenter, setHasAutoCenter] = useState(false);
   const [selectedFeature, setSelectedFeature] = useState(null);
-  const [mapCenter, setMapCenter] = useState(null);
-  const [mapZoom, setMapZoom] = useState(16);
-  console.log("WorksheetDisplay form data:", form);
-  console.log("Polygon to render:", form.polygon);
-  console.log("Features to render:", form.features);
-  console.log("AIGP data:", form.aigp);
-  console.log("Title:", form.title);
-  console.log("Status:", form.status);
 
-  // Function to clear all drawn overlays from the map
-  const clearAllDrawnOverlays = () => {
-    drawnOverlaysRef.current.forEach(overlay => {
-      if (overlay && overlay.setMap) {
-        overlay.setMap(null);
+  console.log("WorksheetDisplay form data:", worksheet);
+  console.log("Polygon to render:", worksheet.polygon);
+  console.log("Features to render:", worksheet.features);
+  console.log("AIGP data:", worksheet.aigp);
+  console.log("Title:", worksheet.title);
+  console.log("Status:", worksheet.status);
+
+  const handleSelectedFeatureChange = (event) => {
+    const { name, value } = event.target;
+
+    setWorksheet((prevForm) => {
+      const updatedFeatures = {
+        ...prevForm.features,
+        [selectedFeature]: {
+          ...prevForm.features[selectedFeature],
+          properties: {
+            ...prevForm.features[selectedFeature].properties,
+            [name]: value
+          }
+        }
+      };
+
+      let updatedAigp = { ...(prevForm.aigp || {}) };
+      if (name === 'aigp') {
+        const prevAigpValue = prevForm.features[selectedFeature]?.properties?.aigp;
+
+        // Decrement count for previous AIGP if changed
+        if (prevAigpValue && prevAigpValue !== value && updatedAigp[prevAigpValue]) {
+          updatedAigp[prevAigpValue]--;
+          if (updatedAigp[prevAigpValue] <= 0) delete updatedAigp[prevAigpValue];
+        }
+        // Increment or set count for new AIGP
+        if (value) {
+          updatedAigp[value] = (updatedAigp[value] || 0) + 1;
+        }
       }
+
+      return {
+        ...prevForm,
+        features: updatedFeatures,
+        aigp: updatedAigp
+      };
     });
-    drawnOverlaysRef.current = [];
+    
   };
+
+  const handleAigpChange = (event) => {
+    const { value } = event.target;
+    // Convert comma-separated string to array
+    const aigpArray = value.split(',').map(item => item.trim()).filter(item => item !== '');
+    setWorksheet((prevForm) => {
+      const newAigp = {};
+      aigpArray.forEach(aigp => {
+        if (aigp) newAigp[aigp] = Number.MAX_SAFE_INTEGER; // Set a default value for each AIGP
+      });
+      return {
+        ...prevForm,
+        aigp: newAigp
+      };
+    });
+  };
+
+  const handleOperationChange = (index, event) => {
+    const { name, value } = event.target;
+    setWorksheet((prevForm) => {
+      const operations = [...prevForm.operations];
+      operations[index] = {
+        ...operations[index],
+        [name]: value
+      };
+      return {
+        ...prevForm,
+        operations
+      };
+    });
+  };
+
+  const handleRemoveOperation = (index) => {
+    setWorksheet((prevForm) => ({
+      ...prevForm,
+      operations: prevForm.operations.filter((_, i) => i !== index)
+    }));
+  };
+
+  const onPolygonComplete = (polygonObject) => {
+    const path = polygonObject.getPath().getArray().map(latLng => [
+      latLng.lng(),
+      latLng.lat()
+    ]);
+
+    const newFeature = {
+      key: Date.now(), // Use timestamp as unique key
+      type: 'Feature',
+      properties: {
+        polygon_id: Date.now(), // Use timestamp as unique ID
+        UI_id: 'Unknown', // Placeholder for UI ID
+        aigp: 'Unknown', // Empty AIGP array
+        rural_property_id: 'Unknown' // Placeholder for rural property ID
+      },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [path]
+      }
+    };
+
+    polygonObject.setMap(null); // Remove the polygon from the map
+
+    console.log("Adding new polygon feature:", newFeature);
+
+    setWorksheet((prevForm) => {
+      const updatedAigp = { ...(prevForm.aigp || {}) };
+      const aigpKey = newFeature.properties.aigp;
+      updatedAigp[aigpKey] = (updatedAigp[aigpKey] || 0) + 1; // Increment AIGP count
+      return {
+        ...prevForm,
+        aigp: updatedAigp,
+        features: { ...prevForm.features, [newFeature.key]: newFeature }
+      };
+    });
+    setSelectedFeature(newFeature.key); // Set the newly created feature as selected
+  };
+
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    setWorksheet((prevForm) => ({
+      ...prevForm,
+      [name]: value
+    }));
+  };
+
+  useEffect(() => {
+  if (
+    selectedFeature &&
+    worksheet.features[selectedFeature] &&
+    mapRef.current &&
+    window.google &&
+    worksheet.features[selectedFeature].geometry
+  ) {
+    setTimeout(() => {
+      const bounds = getFeatureBounds(selectedFeature);
+      if (bounds && !bounds.isEmpty()) {
+        mapRef.current.fitBounds(bounds);
+      }
+    }, 0);
+  }
+}, [selectedFeature, worksheet.features]);
 
   // Function to center map on a specific feature and select it
   const centerOnFeature = (feature) => {
     if (!feature.geometry || !feature.geometry.coordinates) return;
-
-    const coords = extractSampleCoordinates(feature);
-    if (coords && coords.length >= 2) {
-      const center = { lat: coords[1], lng: coords[0] };
-      setMapCenter(center);
-      setMapZoom(18); // Zoom in closer to the feature
-    }
-
-    // Select the feature to display its properties
-    setSelectedFeature(feature);
-    console.log("Selected feature:", feature);
+    setSelectedFeature(feature.key);
   };
-
-
 
   // Auto-center on first feature when features are loaded
   useEffect(() => {
-    if (!hasAutoCenter && form.features && form.features.length > 0 && mapRef.current) {
+    if (!hasAutoCenter && worksheet.features && Object.values(worksheet.features).length > 0 && mapRef.current) {
       console.log("Auto-centering on first feature");
       setTimeout(() => {
-        centerOnFeature(form.features[0]);
+        centerOnFeature(worksheet.features[Object.keys(worksheet.features)[0]]);
         setHasAutoCenter(true);
       }, 1000); // Delay to ensure map is fully loaded
     }
-  }, [form.features, hasAutoCenter]);
+  }, [worksheet.features, hasAutoCenter]);
 
-  // Enhanced polygon completion handler that tracks overlays
-  const handlePolygonComplete = (polygonObject) => {
-    // Store reference to the drawn overlay
-    drawnOverlaysRef.current.push(polygonObject);
+  const renderFeatureOnMap = (feature, index) => {
+    if (!feature.geometry) return null;
 
-    // Call the original handler
-    if (onPolygonComplete) {
-      onPolygonComplete(polygonObject);
+    const { type, coordinates } = feature.geometry;
+    const baseColor = `hsl(${(index * 60) % 360}, 70%, 60%)`;
+    const strokeColor = `hsl(${(index * 60) % 360}, 70%, 40%)`;
+    const ruralPropertyId = feature.properties?.rural_property_id;
+    const isSelected = selectedFeature === feature.key;
+
+    switch (type) {
+      case 'Point':
+        return (
+          <Marker
+            key={`feature-point-${index}`}
+            position={{ lat: coordinates[1], lng: coordinates[0] }}
+          />
+        );
+      case 'LineString':
+        return (
+          <Polyline
+            key={`feature-linestring-${index}`}
+            path={coordinates.map(coord => ({ lat: coord[1], lng: coord[0] }))}
+            options={{
+              strokeColor: strokeColor,
+              strokeWeight: 3,
+              strokeOpacity: 0.8
+            }}
+          />
+        );
+      case 'Polygon':
+        const polygonElement = (
+          <Polygon
+            key={`feature-polygon-${index}`}
+            paths={coordinates[0].map(coord => ({ lat: coord[1], lng: coord[0] }))}
+            options={{
+              fillColor: baseColor,
+              fillOpacity: 0.5,
+              strokeWeight: 2,
+              strokeColor: strokeColor
+            }}
+            onClick={() => { console.log("Clicked"); centerOnFeature(feature); }}
+            editable={!isViewMode}
+          />
+        );
+
+        // Add rural property ID label if available and feature is selected
+        if (ruralPropertyId && isSelected) {
+          const centroid = calculatePolygonCentroid(coordinates[0]);
+          const labelElement = (
+            <InfoWindow
+              key={`feature-polygon-label-${index}`}
+              position={centroid}
+              options={{
+                disableAutoPan: true,
+                pixelOffset: window.google && window.google.maps ? new window.google.maps.Size(0, 0) : undefined
+              }}
+            >
+              <div style={{
+                backgroundColor: 'white',
+                border: '2px solid #333',
+                borderRadius: '4px',
+                padding: '2px 6px',
+                fontSize: '12px',
+                fontWeight: 'bold',
+                color: '#333',
+                minWidth: '20px',
+                textAlign: 'center'
+              }}>
+                {ruralPropertyId}
+              </div>
+            </InfoWindow>
+          );
+          return [polygonElement, labelElement];
+        }
+        return polygonElement;
+
+      case 'MultiPoint':
+        return coordinates.map((coord, pointIndex) => (
+          <Marker
+            key={`feature-multipoint-${index}-${pointIndex}`}
+            position={{ lat: coord[1], lng: coord[0] }}
+          />
+        ));
+      case 'MultiLineString':
+        return coordinates.map((lineCoords, lineIndex) => (
+          <Polyline
+            key={`feature-multilinestring-${index}-${lineIndex}`}
+            path={lineCoords.map(coord => ({ lat: coord[1], lng: coord[0] }))}
+            options={{
+              strokeColor: strokeColor,
+              strokeWeight: 3,
+              strokeOpacity: 0.8
+            }}
+          />
+        ));
+      case 'MultiPolygon':
+        return coordinates.map((polygon, polygonIndex) => {
+          const polygonElement = (
+            <Polygon
+              key={`feature-multipolygon-${index}-${polygonIndex}`}
+              paths={polygon[0].map(coord => ({ lat: coord[1], lng: coord[0] }))}
+              options={{
+                fillColor: baseColor,
+                fillOpacity: 0.5,
+                strokeWeight: 2,
+                strokeColor: strokeColor
+              }}
+            />
+          );
+
+          // Add rural property ID label if available and feature is selected
+          if (ruralPropertyId && isSelected) {
+            const centroid = calculatePolygonCentroid(polygon[0]);
+            const labelElement = (
+              <InfoWindow
+                key={`feature-multipolygon-label-${index}-${polygonIndex}`}
+                position={centroid}
+                options={{
+                  disableAutoPan: true,
+                  pixelOffset: window.google && window.google.maps ? new window.google.maps.Size(0, 0) : undefined
+                }}
+              >
+                <div style={{
+                  backgroundColor: 'white',
+                  border: '2px solid #333',
+                  borderRadius: '4px',
+                  padding: '2px 6px',
+                  fontSize: '12px',
+                  fontWeight: 'bold',
+                  color: '#333',
+                  minWidth: '20px',
+                  textAlign: 'center'
+                }}>
+                  {ruralPropertyId}
+                </div>
+              </InfoWindow>
+            );
+            return [polygonElement, labelElement];
+          }
+          return polygonElement;
+        });
+      default:
+        console.warn(`Geometry type ${type} not yet supported for rendering`);
+        return null;
     }
   };
-
   return (
     <>
       {/* General Info */}
@@ -114,7 +360,7 @@ const WorksheetDisplay = ({
             id="id"
             type="text"
             name="id"
-            value={form.id || ""}
+            value={worksheet.id || ""}
             onChange={handleChange}
             required
             disabled={isViewMode}
@@ -126,7 +372,7 @@ const WorksheetDisplay = ({
             id="title"
             type="text"
             name="title"
-            value={form.title || ""}
+            value={worksheet.title || ""}
             onChange={handleChange}
             required
             disabled={isViewMode}
@@ -138,7 +384,7 @@ const WorksheetDisplay = ({
             id="status"
             type="text"
             name="status"
-            value={form.status || ""}
+            value={worksheet.status || ""}
             onChange={handleChange}
             required
             disabled={isViewMode}
@@ -150,7 +396,7 @@ const WorksheetDisplay = ({
             id="starting_date"
             type="date"
             name="starting_date"
-            value={form.starting_date || ""}
+            value={worksheet.starting_date || ""}
             onChange={handleChange}
             disabled={isViewMode}
           />
@@ -161,7 +407,7 @@ const WorksheetDisplay = ({
             id="finishing_date"
             type="date"
             name="finishing_date"
-            value={form.finishing_date || ""}
+            value={worksheet.finishing_date || ""}
             onChange={handleChange}
             disabled={isViewMode}
           />
@@ -172,7 +418,7 @@ const WorksheetDisplay = ({
             id="issue_date"
             type="date"
             name="issue_date"
-            value={form.issue_date || ""}
+            value={worksheet.issue_date || ""}
             onChange={handleChange}
             disabled={isViewMode}
           />
@@ -183,7 +429,7 @@ const WorksheetDisplay = ({
             id="award_date"
             type="date"
             name="award_date"
-            value={form.award_date || ""}
+            value={worksheet.award_date || ""}
             onChange={handleChange}
             disabled={isViewMode}
           />
@@ -194,7 +440,7 @@ const WorksheetDisplay = ({
             id="service_provider_id"
             type="text"
             name="service_provider_id"
-            value={form.service_provider_id || ""}
+            value={worksheet.service_provider_id || ""}
             onChange={handleChange}
             disabled={isViewMode}
           />
@@ -205,7 +451,7 @@ const WorksheetDisplay = ({
             id="posa_code"
             type="text"
             name="posa_code"
-            value={form.posa_code || ""}
+            value={worksheet.posa_code || ""}
             onChange={handleChange}
             disabled={isViewMode}
           />
@@ -215,7 +461,7 @@ const WorksheetDisplay = ({
             id="posa_description"
             type="text"
             name="posa_description"
-            value={form.posa_description || ""}
+            value={worksheet.posa_description || ""}
             onChange={handleChange}
             disabled={isViewMode}
           />
@@ -225,7 +471,7 @@ const WorksheetDisplay = ({
             id="posp_code"
             type="text"
             name="posp_code"
-            value={form.posp_code || ""}
+            value={worksheet.posp_code || ""}
             onChange={handleChange}
             disabled={isViewMode}
           />
@@ -235,7 +481,7 @@ const WorksheetDisplay = ({
             id="posp_description"
             type="text"
             name="posp_description"
-            value={form.posp_description || ""}
+            value={worksheet.posp_description || ""}
             onChange={handleChange}
             disabled={isViewMode}
           />
@@ -252,7 +498,7 @@ const WorksheetDisplay = ({
             id="aigp"
             type="text"
             name="aigp"
-            value={Array.isArray(form.aigp) ? form.aigp.join(', ') : form.aigp}
+            value={Object.keys(worksheet.aigp || {}).join(', ')}
             onChange={handleAigpChange}
             disabled={isViewMode}
             placeholder="Enter AIGP values separated by commas"
@@ -316,7 +562,7 @@ const WorksheetDisplay = ({
             className="btn btn-success"
             type="button"
             disabled={isViewMode}
-            onClick={() => setForm((prevForm) => ({
+            onClick={() => setWorksheet((prevForm) => ({
               ...prevForm,
               operations: [...prevForm.operations, { operation_code: '', operation_description: '', area_ha: '' }]
             }))}>
@@ -326,7 +572,7 @@ const WorksheetDisplay = ({
       </fieldset>
 
       {/* Selected Feature Details */}
-      {selectedFeature && (
+      {selectedFeature && worksheet.features[selectedFeature] && (
         <fieldset className="form-section">
           <legend>Selected Feature Details</legend>
           <div className="form-grid">
@@ -335,9 +581,9 @@ const WorksheetDisplay = ({
               className="form-input"
               id="feature_aigp"
               type="text"
-              value={selectedFeature.properties?.aigp || ""}
-              disabled
-              readOnly
+              name="aigp"
+              value={worksheet.features[selectedFeature].properties?.aigp || ""}
+              onChange={handleSelectedFeatureChange}
             />
 
             <label className="form-label" htmlFor="feature_ui_id">UI ID (LandIT Worker):</label>
@@ -345,9 +591,9 @@ const WorksheetDisplay = ({
               className="form-input"
               id="feature_ui_id"
               type="text"
-              value={selectedFeature.properties?.UI_id || ""}
-              disabled
-              readOnly
+              name="UI_id"
+              value={worksheet.features[selectedFeature].properties?.UI_id || ""}
+              onChange={handleSelectedFeatureChange}
             />
 
             <label className="form-label" htmlFor="feature_polygon_id">Polygon ID:</label>
@@ -355,9 +601,9 @@ const WorksheetDisplay = ({
               className="form-input"
               id="feature_polygon_id"
               type="text"
-              value={selectedFeature.properties?.polygon_id || ""}
-              disabled
-              readOnly
+              name="polygon_id"
+              value={worksheet.features[selectedFeature].properties?.polygon_id || ""}
+              onChange={handleSelectedFeatureChange}
             />
 
             <label className="form-label" htmlFor="feature_rural_property_id">Rural Property ID:</label>
@@ -365,9 +611,9 @@ const WorksheetDisplay = ({
               className="form-input"
               id="feature_rural_property_id"
               type="text"
-              value={selectedFeature.properties?.rural_property_id || ""}
-              disabled
-              readOnly
+              name="rural_property_id"
+              value={worksheet.features[selectedFeature].properties?.rural_property_id || ""}
+              onChange={handleSelectedFeatureChange}
             />
 
             <label className="form-label" htmlFor="feature_geometry_type">Geometry Type:</label>
@@ -375,7 +621,7 @@ const WorksheetDisplay = ({
               className="form-input"
               id="feature_geometry_type"
               type="text"
-              value={selectedFeature.geometry?.type || ""}
+              value={worksheet.features[selectedFeature].geometry?.type || ""}
               disabled
               readOnly
             />
@@ -390,30 +636,67 @@ const WorksheetDisplay = ({
             >
               Clear Selection
             </button>
+            <button
+              type="button"
+              className="btn btn-danger"
+              style={{ fontSize: '12px', padding: '5px 15px', marginLeft: '10px' }}
+              onClick={() => {
+                // Remove the selected feature from the worksheet
+                setWorksheet(prevForm => {
+                  const newFeatures = { ...prevForm.features };
+                  const removedFeature = newFeatures[selectedFeature];
+                  delete newFeatures[selectedFeature];
+
+                  // If the removed feature had an AIGP, decrement its count
+                  let updatedAigp = { ...prevForm.aigp };
+                  const aigpKey = removedFeature.properties?.aigp;
+                  if (aigpKey && updatedAigp[aigpKey]) {
+                    updatedAigp[aigpKey]--;
+                    if (updatedAigp[aigpKey] <= 0) {
+                      // Remove the key with a new object reference
+                      const { [aigpKey]: _, ...rest } = updatedAigp;
+                      updatedAigp = rest;
+                    }
+                  }
+
+                  const featureKeys = Object.keys(newFeatures);
+                  // If no features left, clear selected feature
+                  if (featureKeys.length === 0) {
+                    setSelectedFeature(null);
+                  } else {
+                    setSelectedFeature(featureKeys[0] || null);
+                  }
+                  return { ...prevForm, aigp: updatedAigp, features: newFeatures };
+                });
+                
+              }}
+            >
+              Remove Feature
+            </button>
           </div>
         </fieldset>
       )}
 
       {/* Feature Navigation Controls */}
-      {form.features && form.features.length > 0 && (
+      {worksheet.features && Object.keys(worksheet.features).length > 0 && (
         <fieldset className="form-section">
           <legend>Feature Navigation</legend>
           <div style={{ padding: '10px', backgroundColor: '#e8f4fd', borderRadius: '4px', border: '1px solid #bee5eb' }}>
             <div style={{ marginBottom: '10px' }}>
               <h4 style={{ margin: '0', fontSize: '14px', color: '#0c5460' }}>
-                Navigate Features ({form.features.length} features)
-                {selectedFeature && <span style={{ fontWeight: 'normal' }}> - Selected: {selectedFeature.properties?.aigp || 'Unknown'}-{selectedFeature.properties?.polygon_id || 'Unknown'}</span>}
+                Navigate Features ({Object.values(worksheet.features).length} features)
+                {selectedFeature && worksheet.features[selectedFeature] && <span style={{ fontWeight: 'normal' }}> - Selected: {worksheet.features[selectedFeature].properties?.aigp || 'Unknown'}-{worksheet.features[selectedFeature].properties?.polygon_id || 'Unknown'}</span>}
               </h4>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
-              {form.features.map((feature, index) => {
-                const isSelected = selectedFeature === feature;
+              {Object.values(worksheet.features).map((feature, index) => {
+                const isSelected = selectedFeature === feature.key;
                 const displayLabel = feature.properties?.aigp && feature.properties?.polygon_id
                   ? `${feature.properties.aigp}-${feature.properties.polygon_id}`
                   : feature.properties?.aigp || `${feature.geometry?.type} ${index + 1}`;
                 return (
                   <button
-                    key={`center-feature-${index}`}
+                    key={`center-feature-${feature.key}`}
                     type="button"
                     onClick={() => centerOnFeature(feature)}
                     className={isSelected ? "btn btn-primary" : "btn btn-outline-primary"}
@@ -441,20 +724,32 @@ const WorksheetDisplay = ({
         {!isViewMode && (
           <div style={{ marginBottom: '10px', padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
             <p style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#666' }}>
-              {form.features && form.features.length > 0
-                ? `${form.features.length} feature(s) loaded: ${form.features.map(f => f.geometry?.type).join(', ')}`
-                : form.polygon && form.polygon.length > 0
-                  ? `${Array.isArray(form.polygon[0]) ? form.polygon.length : 1} polygon(s) drawn`
+              {worksheet.features && Object.values(worksheet.features).length > 0
+                ? `${Object.values(worksheet.features).length} feature(s) loaded: ${Object.values(worksheet.features).map(f => f.geometry?.type).join(', ')}`
+                : worksheet.polygon && worksheet.polygon.length > 0
+                  ? `${Array.isArray(worksheet.polygon[0]) ? worksheet.polygon.length : 1} polygon(s) drawn`
                   : 'No features or polygons loaded'
               }
             </p>
-            {((form.features && form.features.length > 0) || (form.polygon && form.polygon.length > 0)) && (
+            {((worksheet.features && Object.values(worksheet.features).length > 0) || (worksheet.polygon && worksheet.polygon.length > 0)) && (
               <button
                 type="button"
                 onClick={() => {
-                  clearAllDrawnOverlays();
                   setSelectedFeature(null); // Clear selected feature
-                  setForm((prevForm) => ({ ...prevForm, polygon: [], features: [] }));
+                  Object.values(worksheet.features).forEach(feature => {
+                    const aigp = feature.properties?.aigp;
+                    if (aigp && worksheet.aigp && worksheet.aigp[aigp]) {
+                      // Decrement count for the AIGP in the worksheet
+                      setWorksheet((prevForm) => {
+                        const updatedAigp = { ...prevForm.aigp };
+                        updatedAigp[aigp]--;
+                        if (updatedAigp[aigp] <= 0) delete updatedAigp[aigp];
+                        return { ...prevForm, aigp: updatedAigp };
+                      });
+                    }
+                  });
+                  // Clear all features and polygons
+                  setWorksheet((prevForm) => ({ ...prevForm, polygon: [], features: {} }));
                 }}
                 className="btn btn-warning"
                 style={{ fontSize: '12px', padding: '5px 10px' }}
@@ -466,14 +761,15 @@ const WorksheetDisplay = ({
         )}
         <GoogleMap
           ref={mapRef}
+          onLoad={map => mapRef.current = map}
           id="drawing-manager-example"
           mapContainerStyle={{ height: "400px", width: "100%" }}
-          zoom={mapZoom}
-          center={mapCenter || getMapCenter(form)}
+          center={{ lat: 38.659784, lng: -9.202765 }} // Default center FCT
+          zoom={16}
         >
           {!isViewMode && (
             <DrawingManager
-              onPolygonComplete={handlePolygonComplete}
+              onPolygonComplete={onPolygonComplete}
               options={{
                 drawingControl: true,
                 drawingControlOptions: {
@@ -491,47 +787,12 @@ const WorksheetDisplay = ({
             />
           )}
           {/* Render features from GeoJSON */}
-          {form.features && form.features.length > 0 && (
-            form.features.flatMap((feature, index) => {
-              const rendered = renderFeatureOnMap(feature, index, selectedFeature);
+          {worksheet.features && Object.keys(worksheet.features).length > 0 && (
+            Object.values(worksheet.features).flatMap((feature, index) => {
+              const rendered = renderFeatureOnMap(feature, index);
               // Handle both single elements and arrays of elements
               return Array.isArray(rendered) ? rendered : [rendered];
             }).filter(element => element !== null)
-          )}
-          {/* Render legacy polygons for backward compatibility */}
-          {(!form.features || form.features.length === 0) && form.polygon && form.polygon.length > 0 && (
-            <>
-              {Array.isArray(form.polygon[0]) ? (
-                // Multiple polygons - each element is an array of coordinates
-                form.polygon.map((polygonPath, index) => (
-                  polygonPath && polygonPath.length > 2 && (
-                    <Polygon
-                      key={`legacy-polygon-${index}`}
-                      paths={polygonPath}
-                      options={{
-                        fillColor: index === 0 ? "#ffff00" : `hsl(${(index * 60) % 360}, 70%, 60%)`,
-                        fillOpacity: 0.5,
-                        strokeWeight: 1,
-                        strokeColor: index === 0 ? "#ffff00" : `hsl(${(index * 60) % 360}, 70%, 40%)`
-                      }}
-                    />
-                  )
-                ))
-              ) : (
-                // Single polygon - array of coordinates
-                form.polygon.length > 2 && (
-                  <Polygon
-                    key="legacy-single-polygon"
-                    paths={form.polygon}
-                    options={{
-                      fillColor: "#ffff00",
-                      fillOpacity: 0.5,
-                      strokeWeight: 1
-                    }}
-                  />
-                )
-              )}
-            </>
           )}
         </GoogleMap>
       </fieldset>
@@ -555,9 +816,9 @@ export default function WorkSheet({ mode }) {
     posp_code: '',
     posp_description: '',
     operations: [],
-    aigp: [],
+    aigp: {},
     polygon: [],
-    features: []
+    features: {}
   });
   const [initialForm, setInitialForm] = useState(null);
   const [error, setError] = useState('');
@@ -592,78 +853,6 @@ export default function WorkSheet({ mode }) {
   if (!token) {
     return <p>Error: No authentication token found. Redirecting to log in.</p>;
   }
-
-  const handleChange = (event) => {
-    const { name, value } = event.target;
-    setForm((prevForm) => ({
-      ...prevForm,
-      [name]: value
-    }));
-  }
-
-  const handleOperationChange = (index, event) => {
-    const { name, value } = event.target;
-    setForm((prevForm) => {
-      const operations = [...prevForm.operations];
-      operations[index] = {
-        ...operations[index],
-        [name]: value
-      };
-      return {
-        ...prevForm,
-        operations
-      };
-    });
-  }; const handleAigpChange = (event) => {
-    const { value } = event.target;
-    // Convert comma-separated string to array
-    const aigpArray = value.split(',').map(item => item.trim()).filter(item => item !== '');
-    setForm((prevForm) => ({
-      ...prevForm,
-      aigp: aigpArray
-    }));
-  };
-
-  const handleRemoveOperation = (index) => {
-    setForm((prevForm) => ({
-      ...prevForm,
-      operations: prevForm.operations.filter((_, i) => i !== index)
-    }));
-  };
-
-  const onPolygonComplete = (polygonObject) => {
-    // Save polygon coordinates to form
-    const path = polygonObject.getPath().getArray().map(latLng => ({
-      lat: latLng.lat(),
-      lng: latLng.lng()
-    }));
-
-    setForm((prevForm) => {
-      // Check if we already have polygons
-      const currentPolygons = prevForm.polygon || [];
-
-      // If current polygon is a single polygon (array of coordinates), convert to multiple polygon format
-      if (currentPolygons.length > 0 && !Array.isArray(currentPolygons[0])) {
-        // Convert single polygon to multiple polygon format and add new polygon
-        return {
-          ...prevForm,
-          polygon: [currentPolygons, path]
-        };
-      } else if (Array.isArray(currentPolygons) && currentPolygons.length > 0) {
-        // Already multiple polygons, add new one
-        return {
-          ...prevForm,
-          polygon: [...currentPolygons, path]
-        };
-      } else {
-        // First polygon, keep as single polygon format for backward compatibility
-        return {
-          ...prevForm,
-          polygon: path
-        };
-      }
-    });
-  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -714,19 +903,14 @@ export default function WorkSheet({ mode }) {
             <h2 className="worksheet-header">Create WorkSheet</h2>
 
             <WorksheetDisplay
-              form={form}
-              handleChange={handleChange}
-              handleAigpChange={handleAigpChange}
-              handleOperationChange={handleOperationChange}
-              handleRemoveOperation={handleRemoveOperation}
-              setForm={setForm}
-              onPolygonComplete={onPolygonComplete}
+              worksheet={form}
+              setWorksheet={setForm}
               isViewMode={false}
             />
 
             {/* Submit/Error */}
             {error && <div className="form-error">{error}</div>}
-            <button type="submit">{mode === 'create' ? "Create" : "Submit"} Worksheet</button>
+            <button className="btn btn-primary" type="submit">{mode === 'create' ? "Create" : "Submit" }  Worksheet</button>
           </form>
         </div>
       </div>
@@ -895,33 +1079,36 @@ export function ListWorkSheets() {
 }
 
 // Helper function to normalize AIGP data from various formats
+// Helper function to normalize AIGP data from various formats
 function normalizeAigpData(aigpData) {
-  // If it's already an array, return it
-  if (Array.isArray(aigpData)) {
+  // If it's already an object (count map), return as is
+  if (aigpData && typeof aigpData === 'object' && !Array.isArray(aigpData)) {
     return aigpData;
+  }
+
+  // If it's already an array, convert to count map
+  if (Array.isArray(aigpData)) {
+    const map = {};
+    aigpData.forEach(aigp => {
+      if (aigp) map[aigp] = 1;
+    });
+    return map;
   }
 
   // If it's a string, split by comma and clean up
   if (typeof aigpData === 'string') {
     if (aigpData.trim() === '') {
-      return [];
+      return {};
     }
-    // Split by comma and clean up whitespace
-    return aigpData.split(',').map(item => item.trim()).filter(item => item !== '');
-  }
-
-  // If it's an object (legacy format), extract values and return as array
-  if (aigpData && typeof aigpData === 'object') {
-    const values = [];
-    if (aigpData.id) values.push(aigpData.id);
-    if (aigpData.name) values.push(aigpData.name);
-    if (aigpData.address) values.push(aigpData.address);
-    if (aigpData.nif) values.push(aigpData.nif);
-    return values;
+    const map = {};
+    aigpData.split(',').map(item => item.trim()).filter(item => item !== '').forEach(aigp => {
+      map[aigp] = 1;
+    });
+    return map;
   }
 
   // Default fallback
-  return [];
+  return {};
 }
 
 // Simple normalization function for backward compatibility with existing data
@@ -948,50 +1135,43 @@ function normalizeWorksheet(data) {
   };
 }
 
-const getMapCenter = (form) => {
-  console.log("Calculating map center for form:", form);
+function getFeatureBounds(feature) {
+  const bounds = new window.google.maps.LatLngBounds();
 
-  // First check if we have features with geometries
-  if (form.features && form.features.length > 0) {
-    console.log("Found features:", form.features.length);
-
-    // Calculate center from all features
-    let totalLat = 0;
-    let totalLng = 0;
-    let pointCount = 0;
-
-    for (const feature of form.features) {
-      if (feature.geometry && feature.geometry.coordinates) {
-        const coords = extractSampleCoordinates(feature);
-        console.log("Extracted coords for feature:", coords);
-        if (coords && coords.length >= 2) {
-          totalLng += coords[0];
-          totalLat += coords[1];
-          pointCount++;
-        }
-      }
+  const addCoords = (coords) => {
+    if (Array.isArray(coords[0])) {
+      coords.forEach(addCoords);
+    } else if (typeof coords[0] === 'number' && typeof coords[1] === 'number') {
+      bounds.extend({ lat: coords[1], lng: coords[0] });
     }
+  };
 
-    if (pointCount > 0) {
-      const center = {
-        lat: totalLat / pointCount,
-        lng: totalLng / pointCount
-      };
-      console.log("Calculated center from features:", center);
-      return center;
+  if (feature.geometry) {
+    switch (feature.geometry.type) {
+      case 'Polygon':
+        addCoords(feature.geometry.coordinates[0]);
+        break;
+      case 'MultiPolygon':
+        feature.geometry.coordinates.forEach(polygon => addCoords(polygon[0]));
+        break;
+      case 'LineString':
+        addCoords(feature.geometry.coordinates);
+        break;
+      case 'MultiLineString':
+        feature.geometry.coordinates.forEach(addCoords);
+        break;
+      case 'Point':
+        addCoords(feature.geometry.coordinates);
+        break;
+      case 'MultiPoint':
+        feature.geometry.coordinates.forEach(addCoords);
+        break;
+      default:
+        break;
     }
   }
-
-  // Fall back to polygon center if available
-  if (form.polygon && form.polygon.length > 0) {
-    console.log("Using polygon center fallback");
-    return getPolygonCenter(form.polygon);
-  }
-
-  // Default to Lisbon coordinates
-  console.log("Using default Lisbon coordinates");
-  return { lat: 38.659784, lng: -9.202765 };
-};
+  return bounds;
+}
 
 // Helper function to calculate polygon centroid
 const calculatePolygonCentroid = (coordinates) => {
@@ -1043,151 +1223,6 @@ const calculatePolygonCentroid = (coordinates) => {
   }
 };
 
-const renderFeatureOnMap = (feature, index, selectedFeature) => {
-  if (!feature.geometry) return null;
-
-  const { type, coordinates } = feature.geometry;
-  const baseColor = `hsl(${(index * 60) % 360}, 70%, 60%)`;
-  const strokeColor = `hsl(${(index * 60) % 360}, 70%, 40%)`;
-  const ruralPropertyId = feature.properties?.rural_property_id;
-  const isSelected = selectedFeature === feature;
-
-  switch (type) {
-    case 'Point':
-      return (
-        <Marker
-          key={`feature-point-${index}`}
-          position={{ lat: coordinates[1], lng: coordinates[0] }}
-        />
-      );
-    case 'LineString':
-      return (
-        <Polyline
-          key={`feature-linestring-${index}`}
-          path={coordinates.map(coord => ({ lat: coord[1], lng: coord[0] }))}
-          options={{
-            strokeColor: strokeColor,
-            strokeWeight: 3,
-            strokeOpacity: 0.8
-          }}
-        />
-      );
-    case 'Polygon':
-      const polygonElement = (
-        <Polygon
-          key={`feature-polygon-${index}`}
-          paths={coordinates[0].map(coord => ({ lat: coord[1], lng: coord[0] }))}
-          options={{
-            fillColor: baseColor,
-            fillOpacity: 0.5,
-            strokeWeight: 2,
-            strokeColor: strokeColor
-          }}
-        />
-      );
-
-      // Add rural property ID label if available and feature is selected
-      if (ruralPropertyId && isSelected) {
-        const centroid = calculatePolygonCentroid(coordinates[0]);
-        const labelElement = (
-          <InfoWindow
-            key={`feature-polygon-label-${index}`}
-            position={centroid}
-            options={{
-              disableAutoPan: true,
-              pixelOffset: window.google && window.google.maps ? new window.google.maps.Size(0, 0) : undefined
-            }}
-          >
-            <div style={{
-              backgroundColor: 'white',
-              border: '2px solid #333',
-              borderRadius: '4px',
-              padding: '2px 6px',
-              fontSize: '12px',
-              fontWeight: 'bold',
-              color: '#333',
-              minWidth: '20px',
-              textAlign: 'center'
-            }}>
-              {ruralPropertyId}
-            </div>
-          </InfoWindow>
-        );
-        return [polygonElement, labelElement];
-      }
-      return polygonElement;
-
-    case 'MultiPoint':
-      return coordinates.map((coord, pointIndex) => (
-        <Marker
-          key={`feature-multipoint-${index}-${pointIndex}`}
-          position={{ lat: coord[1], lng: coord[0] }}
-        />
-      ));
-    case 'MultiLineString':
-      return coordinates.map((lineCoords, lineIndex) => (
-        <Polyline
-          key={`feature-multilinestring-${index}-${lineIndex}`}
-          path={lineCoords.map(coord => ({ lat: coord[1], lng: coord[0] }))}
-          options={{
-            strokeColor: strokeColor,
-            strokeWeight: 3,
-            strokeOpacity: 0.8
-          }}
-        />
-      ));
-    case 'MultiPolygon':
-      return coordinates.map((polygon, polygonIndex) => {
-        const polygonElement = (
-          <Polygon
-            key={`feature-multipolygon-${index}-${polygonIndex}`}
-            paths={polygon[0].map(coord => ({ lat: coord[1], lng: coord[0] }))}
-            options={{
-              fillColor: baseColor,
-              fillOpacity: 0.5,
-              strokeWeight: 2,
-              strokeColor: strokeColor
-            }}
-          />
-        );
-
-        // Add rural property ID label if available and feature is selected
-        if (ruralPropertyId && isSelected) {
-          const centroid = calculatePolygonCentroid(polygon[0]);
-          const labelElement = (
-            <InfoWindow
-              key={`feature-multipolygon-label-${index}-${polygonIndex}`}
-              position={centroid}
-              options={{
-                disableAutoPan: true,
-                pixelOffset: window.google && window.google.maps ? new window.google.maps.Size(0, 0) : undefined
-              }}
-            >
-              <div style={{
-                backgroundColor: 'white',
-                border: '2px solid #333',
-                borderRadius: '4px',
-                padding: '2px 6px',
-                fontSize: '12px',
-                fontWeight: 'bold',
-                color: '#333',
-                minWidth: '20px',
-                textAlign: 'center'
-              }}>
-                {ruralPropertyId}
-              </div>
-            </InfoWindow>
-          );
-          return [polygonElement, labelElement];
-        }
-        return polygonElement;
-      });
-    default:
-      console.warn(`Geometry type ${type} not yet supported for rendering`);
-      return null;
-  }
-};
-
 const validateGeoJSONWorksheet = (geoJsonData) => {
   if (!geoJsonData.type || geoJsonData.type !== "FeatureCollection") {
     return { valid: false, error: "Must be a FeatureCollection" };
@@ -1234,13 +1269,30 @@ const convertGeoJSONToWorksheet = (geoJsonData) => {
     aigp: normalizeAigpData(allMetadata.aigp),
     operations: allMetadata.operations || [],
     polygon: [], // Keep empty for backward compatibility
-    features: geoJsonData.features || []
+    features: Object.fromEntries(
+      (geoJsonData.features || []).map((feature) => {
+        const key = feature.properties?.polygon_id || Date.now();
+        return [key, {...feature, key}];
+      })
+    )
   };
+
+  Object.values(result.features).forEach(feature => {
+    if (feature.properties?.aigp) {
+      // Increment the count for this AIGP in the worksheet
+      if (!result.aigp[feature.properties.aigp]) {
+        result.aigp[feature.properties.aigp] = 1;
+      } else {
+        result.aigp[feature.properties.aigp]++;
+      }
+    }
+  });
 
   console.log("Converted worksheet result:", result);
   return result;
 };
 
+/**
 const getPolygonCenter = (polygon) => {
   if (!polygon || polygon.length === 0) return { lat: 38.659784, lng: -9.202765 };
 
@@ -1274,6 +1326,7 @@ const getPolygonCenter = (polygon) => {
     return { lat, lng };
   }
 };
+ */
 
 export function SelectWorksheet({ mode }) {
   const [id, setId] = useState('');
@@ -1435,7 +1488,7 @@ export function UploadWorkSheet() {
     formData.append('file', file);
 
     try {
-      const response = await fetch("/rest/worksheet/upload", {
+      const response = await fetch("/rest/worksheet/create", {
         method: 'POST',
         headers: {
           'Authorization': token.raw // Use raw token for authorization
@@ -1576,75 +1629,8 @@ export function UploadWorkSheet() {
 
               {worksheetData && (
                 <WorksheetDisplay
-                  form={worksheetData}
-                  handleChange={(event) => {
-                    const { name, value } = event.target;
-                    setWorksheetData((prevForm) => ({
-                      ...prevForm,
-                      [name]: value
-                    }));
-                  }}
-                  handleAigpChange={(event) => {
-                    const { value } = event.target;
-                    // Convert comma-separated string to array
-                    const aigpArray = value.split(',').map(item => item.trim()).filter(item => item !== '');
-                    setWorksheetData((prevForm) => ({
-                      ...prevForm,
-                      aigp: aigpArray
-                    }));
-                  }}
-                  handleOperationChange={(index, event) => {
-                    const { name, value } = event.target;
-                    setWorksheetData((prevForm) => {
-                      const operations = [...prevForm.operations];
-                      operations[index] = {
-                        ...operations[index],
-                        [name]: value
-                      };
-                      return {
-                        ...prevForm,
-                        operations
-                      };
-                    });
-                  }}
-                  handleRemoveOperation={(index) => {
-                    setWorksheetData((prevForm) => ({
-                      ...prevForm,
-                      operations: prevForm.operations.filter((_, i) => i !== index)
-                    }));
-                  }}
-                  setForm={setWorksheetData}
-                  onPolygonComplete={(polygonObject) => {
-                    const path = polygonObject.getPath().getArray().map(latLng => ({
-                      lat: latLng.lat(),
-                      lng: latLng.lng()
-                    }));
-                    setWorksheetData((prevForm) => {
-                      // Check if we already have polygons
-                      const currentPolygons = prevForm.polygon || [];
-
-                      // If current polygon is a single polygon (array of coordinates), convert to multiple polygon format
-                      if (currentPolygons.length > 0 && !Array.isArray(currentPolygons[0])) {
-                        // Convert single polygon to multiple polygon format and add new polygon
-                        return {
-                          ...prevForm,
-                          polygon: [currentPolygons, path]
-                        };
-                      } else if (Array.isArray(currentPolygons) && currentPolygons.length > 0) {
-                        // Already multiple polygons, add new one
-                        return {
-                          ...prevForm,
-                          polygon: [...currentPolygons, path]
-                        };
-                      } else {
-                        // First polygon, keep as single polygon format for backward compatibility
-                        return {
-                          ...prevForm,
-                          polygon: path
-                        };
-                      }
-                    });
-                  }}
+                  worksheet={worksheetData}
+                  setWorksheet={setWorksheetData}
                   isViewMode={false}
                 />
               )}

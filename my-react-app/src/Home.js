@@ -76,7 +76,7 @@ export default function Home() {
           <button className="btn btn-info" onClick={() => navigate('/user/changeRole')}>Change Role</button>
           <button className="btn btn-info" onClick={() => navigate('/user/changeState')}>Change State</button>
           <button className="btn btn-outline" onClick={() => navigate('/user/listUsers')}>List Users</button>
-          {(role === 'admin' || role === 'smbo') && (
+          {(role === 'SYSADMIN' || role === 'SMBO') && (
             <>
               <h3>Worksheets</h3>
               <button className="btn btn-primary" onClick={() => navigate('/worksheet/create')}>Create Worksheet</button>
