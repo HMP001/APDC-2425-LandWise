@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.logging.Logger;
 
 import org.apache.commons.codec.digest.DigestUtils;
@@ -27,9 +28,8 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.Response.Status;
-import javassist.bytecode.Descriptor.Iterator;
+import pt.unl.fct.di.apdc.userapp.util.ChangeAttributes;
 import pt.unl.fct.di.apdc.userapp.util.ChangeAttributes;
 import pt.unl.fct.di.apdc.userapp.util.ChangePassword;
 import pt.unl.fct.di.apdc.userapp.util.ChangeRole;
