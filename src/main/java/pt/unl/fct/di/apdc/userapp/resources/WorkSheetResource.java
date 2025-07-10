@@ -75,6 +75,7 @@ public class WorkSheetResource {
         try {
             Key key = datastore.newKeyFactory().setKind("WorkSheet").newKey(data.id);
             Entity worksheet = Entity.newBuilder(key)
+                .set("title", data.title)
                 .set("issue_date", data.issue_date)
                 .set("award_date", data.award_date)
                 .set("starting_date", data.starting_date)
@@ -118,12 +119,15 @@ public class WorkSheetResource {
                 String content = new String(uploadedInputStream.readAllBytes());
                 JsonObject root = JsonParser.parseString(content).getAsJsonObject();
         
+                
                 JsonObject metadata = root.getAsJsonObject("metadata");
                 metadata.add("features", root.get("features"));
-    
+                metadata.add("title", root.get("title"));
+
                 WorkSheetData data = g.fromJson(metadata, WorkSheetData.class);
                 data.features = Arrays.asList(g.fromJson(root.get("features"), WorkSheetData.Feature[].class));
-        
+                data.title = root.has("name") ? root.get("name").getAsString() : null;
+
                 return createWorksheet(cookie, data);
 
         } catch (Exception e) {

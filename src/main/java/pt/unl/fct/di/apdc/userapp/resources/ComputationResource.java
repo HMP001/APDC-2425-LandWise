@@ -61,7 +61,7 @@ public class ComputationResource {
     }
     
     @GET
-    @Path("/view/{username}")
+    @Path("/user/{username}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response viewUser(@PathParam("username") String targetUsername,
                              @CookieParam("session::apdc") Cookie cookie,
@@ -185,15 +185,21 @@ public class ComputationResource {
         map.put("username", entity.getKey().getName());
 
         for (String name : entity.getNames()) {
+            // Nunca expor password
+            if (name.equals("password")) continue;
+        
+            // Se for RU ou VU, limitar os campos visíveis
             if (Roles.is(requesterRole, Roles.RU, Roles.VU)) {
                 if (!name.equals("user_email") && !name.equals("user_name")) {
                     continue;
                 }
             }
+        
             Value<?> value = entity.getValue(name);
             Object fieldValue = (value != null) ? value.get() : "NOT DEFINED";
             map.put(name, fieldValue);
         }
+        
 
         return map;
     }

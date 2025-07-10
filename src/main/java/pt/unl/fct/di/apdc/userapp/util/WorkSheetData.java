@@ -3,6 +3,7 @@ package pt.unl.fct.di.apdc.userapp.util;
 import java.util.List;
 import java.util.Map;
 public class WorkSheetData {
+    public String title;
     public String id;
     public String issue_date;
     public String award_date;
