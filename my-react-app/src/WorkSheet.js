@@ -5,18 +5,17 @@ import { topBar } from './TopBar';
 import './WorkSheet.css';
 import { FaChevronUp, FaChevronDown } from 'react-icons/fa';
 import CheckRequests from './CheckRequests';
-import { getJWTToken } from './Token';
+import './AuthForm.css';
 
-async function fetchWorkSheet(token, id) {
+async function fetchWorkSheet(id, navigate) {
   try {
     const response = await fetch(`/rest/worksheet/view/${id}`, {
       method: 'GET',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': token.raw // Use raw token for authorization
+        'Content-Type': 'application/json'
       }
     });
-    let error = CheckRequests(response, token);
+    let error = CheckRequests(response, navigate);
     if (!response.ok) {
       throw new Error(`Error fetching worksheet: ${error}`);
     }
@@ -169,21 +168,21 @@ const WorksheetDisplay = ({
   };
 
   useEffect(() => {
-  if (
-    selectedFeature &&
-    worksheet.features[selectedFeature] &&
-    mapRef.current &&
-    window.google &&
-    worksheet.features[selectedFeature].geometry
-  ) {
-    setTimeout(() => {
-      const bounds = getFeatureBounds(selectedFeature);
-      if (bounds && !bounds.isEmpty()) {
-        mapRef.current.fitBounds(bounds);
-      }
-    }, 0);
-  }
-}, [selectedFeature, worksheet.features]);
+    if (
+      selectedFeature &&
+      worksheet.features[selectedFeature] &&
+      mapRef.current &&
+      window.google &&
+      worksheet.features[selectedFeature].geometry
+    ) {
+      setTimeout(() => {
+        const bounds = getFeatureBounds(worksheet.features[selectedFeature]);
+        if (bounds && !bounds.isEmpty()) {
+          mapRef.current.fitBounds(bounds);
+        }
+      }, 0);
+    }
+  }, [selectedFeature, worksheet.features]);
 
   // Function to center map on a specific feature and select it
   const centerOnFeature = (feature) => {
@@ -823,18 +822,11 @@ export default function WorkSheet({ mode }) {
   const [initialForm, setInitialForm] = useState(null);
   const [error, setError] = useState('');
   const navigate = useNavigate();
-  const token = getJWTToken();
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!token) {
-      setTimeout(() => {
-        navigate('/login');
-      }, 2000);
-      return;
-    }
-
     if (mode === 'edit') {
-      fetchWorkSheet(token, id)
+      fetchWorkSheet(id, navigate)
         .then(data => {
           if (!data) throw new Error("No data found for the given ID");
           console.log("Raw fetched worksheet data:", data);
@@ -848,15 +840,12 @@ export default function WorkSheet({ mode }) {
           setError("Failed to load worksheet data. Please try again later.");
         });
     }
-  }, [token, navigate, id, mode]);
-
-  if (!token) {
-    return <p>Error: No authentication token found. Redirecting to log in.</p>;
-  }
+  }, [navigate, id, mode]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError("");
+    setLoading(true);
 
     try {
       // Convert AIGP array to comma-separated string for backend
@@ -868,10 +857,9 @@ export default function WorkSheet({ mode }) {
       const response = await fetch(mode === 'create' ? "/rest/worksheet/create" : "/rest/worksheet/updateStatus", {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token.raw
+          'Content-Type': 'application/json'
         },
-        body: JSON.stringify(token.raw, formDataForBackend)
+        body: JSON.stringify(formDataForBackend)
       });
       if (response.ok) {
         const data = await response.json();
@@ -883,13 +871,16 @@ export default function WorkSheet({ mode }) {
         if (mode === 'edit') {
           setForm(initialForm); // Reset to initial form if edit fails
         }
+        setLoading(false);
       }
     } catch (error) {
       console.error("Error creating worksheet:", error);
       setError("An error occurred while creating the worksheet. Please try again later.");
       if (mode === 'edit') {
         setForm(initialForm); // Reset to initial form if edit fails
+        
       }
+      setLoading(false);
     }
 
   };
@@ -910,7 +901,20 @@ export default function WorkSheet({ mode }) {
 
             {/* Submit/Error */}
             {error && <div className="form-error">{error}</div>}
-            <button className="btn btn-primary" type="submit">{mode === 'create' ? "Create" : "Submit" }  Worksheet</button>
+            <button 
+              className="btn btn-primary btn-large" 
+              type="submit"
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  {mode === 'create' ? "Creating" : "Submiting" }  Worksheet
+                  <span className="spinner"/>
+                </>
+              ) : (
+                mode === 'create' ? "Create Worksheet" : "Submit Worksheet"
+              )}
+            </button>
           </form>
         </div>
       </div>
@@ -940,16 +944,9 @@ export function ViewWorkSheet() {
   });
   const [error, setError] = useState('');
   const navigate = useNavigate();
-  const token = getJWTToken();
 
   useEffect(() => {
-    if (!token) {
-      setTimeout(() => {
-        navigate('/login');
-      }, 2000);
-      return;
-    }
-    fetchWorkSheet(token, id)
+    fetchWorkSheet(id, navigate)
       .then(data => {
         if (!data) {
           throw new Error("No data found for the given ID");
@@ -961,11 +958,7 @@ export function ViewWorkSheet() {
         console.error("Error fetching worksheet:", err);
         setError("Failed to load worksheet data. Please try again later.");
       });
-  }, [token, navigate, id]);
-
-  if (!token) {
-    return <p>Error: No authentication token found. Redirecting to log in.</p>;
-  }
+  }, [navigate, id]);
 
   return (
     <>
@@ -975,13 +968,8 @@ export function ViewWorkSheet() {
           <form className="worksheet-form">
             <h2 className="worksheet-header">View WorkSheet</h2>
             <WorksheetDisplay
-              form={form}
-              handleChange={() => { }}
-              handleAigpChange={() => { }}
-              handleOperationChange={() => { }}
-              handleRemoveOperation={() => { }}
+              worksheet={form}
               setForm={setForm}
-              onPolygonComplete={() => { }}
               isViewMode={true}
             />
             {error && <div className="form-error">{error}</div>}
@@ -997,42 +985,45 @@ export function ListWorkSheets() {
   const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState(null); // Track which worksheet is expanded
   const navigate = useNavigate();
-  const token = getJWTToken();
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!token) {
-      setTimeout(() => {
-        navigate('/login');
-      }, 2000);
-      return;
-    }
-    async function fetchWorksheets() {
+    let isMounted = true; // Track component mount status
+    const fetchWorksheets = async () => {
       try {
-        const response = await fetch("/rest/worksheet/list", {
+        const request = await fetch("/rest/worksheet/list", {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': token.raw // Use raw token for authorization
-          },
-          body: JSON.stringify({ token: token.raw })
+            'Content-Type': 'application/json'
+          }
         });
-        const errorMsg = CheckRequests(response, token, navigate);
-        if (!response.ok) {
-          setError(errorMsg || "Failed to load worksheets. Please try again later.");
-          return;
-        }
-        const data = await response.json();
-        setWorksheets(data.map(normalizeWorksheet));
+        CheckRequests(request, navigate);
+
+        const data = await request.json();
+        if (isMounted) setWorksheets(data.map(normalizeWorksheet));
       } catch (err) {
-        console.error("Error fetching worksheets:", err);
-        setError("Failed to load worksheets. Please try again later.");
+        if (isMounted) setError('Error fetching users. Please try again later.');
+        console.error(err);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     }
     fetchWorksheets();
-  }, [token, navigate]);
+    return () => { isMounted = false; }; // Cleanup function to avoid state updates on unmounted component
+  }, [navigate]);
 
-  if (!token) {
-    return <p>Error: No authentication token found. Redirecting to log in.</p>;
+  if (loading) {
+    return (
+      <>
+        {topBar(navigate)}
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Loading Worksheets...</p>
+        </div>
+      </>
+    );
   }
 
   const handleExpand = async (id) => {
@@ -1058,13 +1049,8 @@ export function ListWorkSheets() {
                 {expandedId === worksheet.title && (
                   <div style={{ padding: 10, background: '#f9f9f9' }}>
                     <WorksheetDisplay
-                      form={worksheet}
-                      handleChange={() => { }}
-                      handleAigpChange={() => { }}
-                      handleOperationChange={() => { }}
-                      handleRemoveOperation={() => { }}
+                      worksheet={worksheet}
                       setForm={() => { }}
-                      onPolygonComplete={() => { }}
                       isViewMode={true}
                     />
                   </div>
@@ -1328,72 +1314,6 @@ const getPolygonCenter = (polygon) => {
 };
  */
 
-export function SelectWorksheet({ mode }) {
-  const [id, setId] = useState('');
-  const [showModal, setShowModal] = useState(true);
-  const inputRef = useRef(null);
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    if (showModal && inputRef.current) {
-      inputRef.current.focus();
-    }
-  }, [showModal]);
-
-  const handleSubmit = (event) => {
-    event.preventDefault();
-    if (id.trim() === '') {
-      alert("Please enter a valid Worksheet ID.");
-      return;
-    }
-    if (mode === 'view') {
-      navigate(`/worksheet/view/${id}`);
-    } else if (mode === 'edit') {
-      navigate(`/worksheet/edit/${id}`);
-    } else {
-      console.error("Invalid mode specified:", mode);
-    }
-  };
-
-  return (
-    <>
-      {showModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <h2>Select Worksheet</h2>
-            <form onSubmit={handleSubmit}>
-              <label htmlFor="worksheetId">Worksheet ID:</label>
-              <input
-                type="text"
-                id="worksheetId"
-                value={id}
-                onChange={(e) => setId(e.target.value)}
-                ref={inputRef}
-                required
-                autoFocus
-                className="form-input"
-              />
-              <button type="submit" className="form-button">Go</button>
-              <button type="button" className="form-button" onClick={() => setShowModal(false)}>
-                Cancel
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-      {!showModal && (
-        <div className="worksheet-selection">
-          <h2>Select Worksheet</h2>
-          <button onClick={() => setShowModal(true)} className="form-button">
-            Select Worksheet
-          </button>
-        </div>
-      )}
-    </>
-  );
-
-}
-
 export function UploadWorkSheet() {
   const [file, setFile] = useState(null);
   const [error, setError] = useState('');
@@ -1402,14 +1322,7 @@ export function UploadWorkSheet() {
   const [showPreview, setShowPreview] = useState(false);
   const [detectedFormat, setDetectedFormat] = useState('');
   const navigate = useNavigate();
-  const token = getJWTToken();
-
-  if (!token) {
-    setTimeout(() => {
-      navigate('/login');
-    }, 2000);
-    return;
-  }
+  const [loading, setLoading] = useState(false);
 
   const handleFileChange = (event) => {
     const selectedFile = event.target.files[0];
@@ -1483,6 +1396,7 @@ export function UploadWorkSheet() {
       setError("Please select a file to upload.");
       return;
     }
+    setLoading(true);
 
     const formData = new FormData();
     formData.append('file', file);
@@ -1491,7 +1405,7 @@ export function UploadWorkSheet() {
       const response = await fetch("/rest/worksheet/create", {
         method: 'POST',
         headers: {
-          'Authorization': token.raw // Use raw token for authorization
+          'Content-Type': 'application/json'
         },
         body: formData
       });
@@ -1502,10 +1416,12 @@ export function UploadWorkSheet() {
       } else {
         const errorData = await response.json();
         setError(errorData.message || "Failed to upload worksheet. Please try again later.");
+        setLoading(false);
       }
     } catch (error) {
       console.error("Error uploading worksheet:", error);
       setError("An error occurred while uploading the worksheet. Please try again later.");
+      setLoading(false);
     }
   };
 
@@ -1614,6 +1530,7 @@ export function UploadWorkSheet() {
                     onClick={handleCancelPreview}
                     className="btn btn-secondary"
                     style={{ marginRight: '10px' }}
+                    disabled={loading}
                   >
                     Choose Different File
                   </button>
@@ -1621,8 +1538,16 @@ export function UploadWorkSheet() {
                     type="button"
                     onClick={handleSubmit}
                     className="btn btn-primary"
+                    disabled={loading}
                   >
-                    Confirm & Upload to Server
+                    {loading ? (
+                      <>
+                        Submiting...
+                        <span className="spinner"/>
+                      </>
+                    ) : (
+                    'Confirm and Upload to Server'
+                    )}
                   </button>
                 </div>
               </div>
@@ -1934,21 +1859,13 @@ export function DeleteWorkSheet({ worksheetId }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
-  const token = getJWTToken();
-
-  if (!token) {
-    setTimeout(() => {
-      navigate('/login');
-    }, 2000);
-    return;
-  }
+  const [loading, setLoading] = useState(false);
 
   const handleDelete = async () => {
     try {
       const response = await fetch(`/rest/worksheet/${worksheetId}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': token.raw // Use raw token for authorization
         }
       });
 
@@ -1960,10 +1877,12 @@ export function DeleteWorkSheet({ worksheetId }) {
       } else {
         const errorData = await response.json();
         setError(errorData.message || "Failed to delete worksheet. Please try again later.");
+        setLoading(false);
       }
     } catch (error) {
       console.error("Error deleting worksheet:", error);
       setError("An error occurred while deleting the worksheet. Please try again later.");
+      setLoading(false);
     }
   };
 
@@ -1971,7 +1890,16 @@ export function DeleteWorkSheet({ worksheetId }) {
     <div className="delete-worksheet-container">
       <h2>Delete WorkSheet</h2>
       <p>Are you sure you want to delete the worksheet with ID: <strong>{worksheetId}</strong>?</p>
-      <button onClick={handleDelete} className="btn btn-danger">Delete</button>
+      <button onClick={handleDelete} className="btn btn-danger">
+        {loading ? (
+            <>
+              Deleting...
+              <span className="spinner"/>
+            </>
+          ) : (
+          'Delete WorkSheet'
+        )}
+      </button>
       {error && <div className="form-error">{error}</div>}
       {success && <div className="form-success">Worksheet deleted successfully!</div>}
     </div>

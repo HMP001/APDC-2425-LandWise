@@ -1,10 +1,8 @@
 import './Home.css';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { logoutAndRedirect } from './Login';
 import CheckRequests from './CheckRequests';
-import { SelectWorksheet } from './WorkSheet';
 import { useState } from 'react';
-import { getJWTToken } from './Token';
 
 async function Logout(token, navigate) {
   try {
@@ -13,16 +11,19 @@ async function Logout(token, navigate) {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': token
-      },
-      body: token
+      }
     });
     CheckRequests(response, token, navigate);
     if (response.ok) {
       console.log("Logout successful");
       logoutAndRedirect(navigate);
+    } else if (response.status === 404) {
+      console.error("User not found deleting token anyway, redirecting to home.");
+      logoutAndRedirect(navigate);
     }
   } catch (error) {
     console.error("Logout error:", error);
+    logoutAndRedirect(navigate);
   }
 }
 
@@ -30,30 +31,25 @@ export default function Home() {
   const navigate = useNavigate();
   const [worksheetModal, setWorksheetModal] = useState(null);
 
-  const token = getJWTToken();
-  console.log("Token data:", token);
-
-  // Extract user data directly from JWT token (already parsed with defaults)
-  const username = token?.username || '';
-  const role = token?.role || '';
-  const photoUrl = token?.photo_url || '';
+  const { username, photo, role, token } = JSON.parse(sessionStorage.getItem('userInfo') || '{}');
+  console.log("User Info:", { username, photo, role, token });
 
   return (
     <div className="home-root">
       <div className="home-topbar">
         <img src="/Logo.jpeg" alt="Logo" className="home-logo" />
         <div className="home-top-right">
-          {token && role !== 'VU' ? (
+          {username && role !== 'VU' ? (
             <>
               <button className="btn btn-danger btn-small" onClick={() => { Logout(token, navigate); }}>Logout</button>
               <span>Logged in as: {username}</span>
-              {photoUrl && (
+              {photo && (
                 <div className="profile-picture-container">
                   <img
-                    src={photoUrl}
+                    src={photo}
                     alt="Profile"
                     className="profile-picture"
-                    onClick={() => window.open(photoUrl, '_blank')}
+                    onClick={() => window.open(photo, '_blank')}
                     title="Click to view full size"
                   />
                 </div>
@@ -81,7 +77,7 @@ export default function Home() {
               <h3>Worksheets</h3>
               <button className="btn btn-primary" onClick={() => navigate('/worksheet/create')}>Create Worksheet</button>
               <button className="btn btn-success" onClick={() => navigate('/worksheet/upload')}>Upload Worksheet</button>
-              <button className="btn btn-info" onClick={() => setWorksheetModal('edit')}>Edit Worksheet</button>
+              <button className="btn btn-info" onClick={() => {setWorksheetModal('edit')}}>Edit Worksheet</button>
               <button className="btn btn-info" onClick={() => setWorksheetModal('view')}>View Worksheet</button>
               <button className="btn btn-outline" onClick={() => navigate('/worksheet/list')}>List Worksheets</button>
             </>
@@ -101,10 +97,67 @@ export default function Home() {
         </div>
         {worksheetModal && (
           <SelectWorksheet
+            key={worksheetModal}
             mode={worksheetModal}
             onClose={() => setWorksheetModal(null)}
           />
         )}
+      </div>
+    </div>
+  );
+}
+
+function logoutAndRedirect(navigate) {
+  sessionStorage.removeItem('userInfo');
+  navigate('/login');
+}
+
+function SelectWorksheet({onClose, mode}) {
+  const [id, setId] = useState('');
+  const inputRef = useRef(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, []);
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    if (id.trim() === '') {
+      alert("Please enter a valid Worksheet ID.");
+      return;
+    }
+    if (mode === 'view') {
+      navigate(`/worksheet/view/${id}`);
+    } else if (mode === 'edit') {
+      navigate(`/worksheet/edit/${id}`);
+    } else {
+      console.error("Invalid mode specified:", mode);
+    }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-content">
+        <h2>Select Worksheet</h2>
+        <form onSubmit={handleSubmit}>
+          <label htmlFor="worksheetId">Worksheet ID:</label>
+          <input
+            type="text"
+            id="worksheetId"
+            value={id}
+            onChange={(e) => setId(e.target.value)}
+            ref={inputRef}
+            required
+            autoFocus
+            className="form-input"
+          />
+          <button type="submit" className="btn btn-primary btn-small">Go</button>
+          <button type="button" className="btn btn-danger btn-small" onClick={onClose}>
+            Cancel
+          </button>
+        </form>
       </div>
     </div>
   );

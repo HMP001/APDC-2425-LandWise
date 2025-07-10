@@ -7,7 +7,7 @@ import roles from './roles'; // Assuming roles.js exports the roles object
 import { requiredByRoleToRegister, requiredByRoleToActivate } from './RequiredByRole';
 
 const RegisterForm = ({
-  userData, changeData, handleSubmit, getFieldRequirement, showWarning
+  userData, changeData, handleSubmit, getFieldRequirement, showWarning, loading
 }) => {
   return (
     <form onSubmit={handleSubmit}>
@@ -72,15 +72,27 @@ const RegisterForm = ({
           autoComplete="email"
         />
 
-        <label className="form-label" htmlFor="telephone">Phone Number:</label>
+        <label className="form-label" htmlFor="telephone1">Phone Number:</label>
         <input
           className='form-input'
-          id="telephone"
+          id="telephone1"
           type="tel"
-          name="telephone"
-          value={userData.telephone}
+          name="telephone1"
+          value={userData.telephone1}
           onChange={changeData}
           required={getFieldRequirement('phone1') === 'required'}
+          autoComplete="tel"
+        />
+
+        <label className="form-label" htmlFor="telephone2">Secondary Phone Number:</label>
+        <input
+          className="form-input"
+          id="telephone2"
+          type="tel"
+          name="telephone2"
+          value={userData.telephone2}
+          onChange={changeData}
+          required={getFieldRequirement('phone2') === 'required'}
           autoComplete="tel"
         />
 
@@ -283,7 +295,20 @@ const RegisterForm = ({
 
       </div>
       {!showWarning && (
-        <button className="btn btn-success btn-large" type="submit">Register</button>
+        <button 
+          className="btn btn-primary btn-large" 
+          type="submit"
+          disabled={loading}
+        >
+          {loading ? (
+            <>
+              Registering...
+              <span className="spinner"/>
+            </>
+          ) : (
+          'Register'
+          )}
+        </button>
       )}
     </form>
   );
@@ -298,7 +323,8 @@ function Register() {
     confirmation: '',
     email: '',
     name: '',
-    telephone: '',
+    telephone1: '',
+    telephone2: '',
     profile: 'PUBLICO',
     role: 'RU',
     nif: '',
@@ -320,6 +346,7 @@ function Register() {
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
   const [showWarningConfirm, setShowWarningConfirm] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   // Get required fields for current role
   const requiredFields = requiredByRoleToRegister[userData.role] || [];
@@ -337,7 +364,8 @@ function Register() {
     confirmation: 'pwd',
     email: 'email',
     name: 'name',
-    telephone: 'phone1',
+    telephone1: 'phone1',
+    telephone2: 'phone2',
     nif: 'nif',
     employer: 'employer',
     job: 'job',
@@ -386,6 +414,7 @@ function Register() {
     event.preventDefault();
     setError("");
     setWarning("");
+    setLoading(true);
 
     if (userData.password !== userData.confirmation) {
       setError('Passwords do not match');
@@ -448,9 +477,11 @@ function Register() {
       } else {
         const errorData = await response.json();
         setError(errorData.message || 'Registration failed');
+        setLoading(false);
       }
     } catch (error) {
       setError('An error occurred while registering');
+      setLoading(false);
     }
   };
 
@@ -466,6 +497,7 @@ function Register() {
             handleSubmit={handleSubmit}
             getFieldRequirement={(field) => getFieldRequirement(fieldMapping[field] || field)}
             showWarning={!!warning}
+            loading={loading}
           />
           {error && <p className="error" style={{ color: 'red' }}>{error}</p>}
           {warning && (

@@ -1,68 +1,50 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { topBar } from './TopBar';
 import CheckRequests from './CheckRequests';
 import './List.css';
-import { getRawToken } from './Token';
 
 export default function ListUsers() {
   const navigate = useNavigate();
-  const token = getRawToken();
   const [users, setUsers] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!token) {
-      setLoading(false);
-      setTimeout(() => {
-        navigate('/login');
-      }, 2000);
-      return;
-    }
+    let isMounted = true; // Prevent state updates if unmounted
 
-    setLoading(true);
-    const response = fetch('/rest/utils/list', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': token
-      },
-      body: token
-    });
-    CheckRequests(response, token, navigate);
-    response
-      .then(res => {
-        if (!res.ok) throw new Error(res.statusText);
-        return res.json();
-      })
-      .then(data => {
-        setUsers(Object.values(data));
-        setLoading(false);
-      })
-      .catch(err => {
-        setError('Error fetching users. Please try again later.');
-        setLoading(false);
+    const fetchUsers = async () => {
+      setLoading(true);
+      try {
+        const request = await fetch('/rest/utils/list', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+
+        CheckRequests(request, navigate);
+
+        const data = await request.json();
+        if (isMounted) setUsers(Object.values(data));
+      } catch (err) {
+        if (isMounted) setError('Error fetching users. Please try again later.');
         console.error(err);
-      });
-  }, [token, navigate]);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    fetchUsers();
+
+    return () => { isMounted = false; };
+  }, [navigate]);
 
   // Helper function to get user initials for avatar
   const getUserInitials = (user) => {
     const name = user.name || user.username || user.id || '';
     return name.toString().substring(0, 2).toUpperCase() || '?';
   };
-
-  if (!token) {
-    return (
-      <>
-        {topBar(navigate)}
-        <div className="error-container">
-          <p>Error: No authentication token found. Redirecting to log in.</p>
-        </div>
-      </>
-    );
-  }
 
   if (loading) {
     return (
@@ -91,7 +73,7 @@ export default function ListUsers() {
     <>
       {topBar(navigate)}
       <div className="user-list-container">
-        <h1 className="user-list-header">Team Members</h1>
+        <h1 className="user-list-header">Registered Users</h1>
 
         {users.length === 0 ? (
           <div className="empty-state">
@@ -107,10 +89,19 @@ export default function ListUsers() {
                   {getUserInitials(user)}
                 </div>
                 <div className="user-info">
-                  {Object.entries(user).map(([key, value]) => (
+                  {sortFields(user).map(([key, value]) => (
                     <div key={key} className="user-field">
                       <span className="field-label">{key}:</span>
-                      <span className="field-value">{value}</span>
+                      <span
+                        className={
+                          key === 'user_pwd' ? 'field-value password-field' : 'field-value'
+                        }
+                        title={key === 'user_pwd' && typeof value === 'string' ? value : undefined}
+                      >
+                        {key === 'user_creation_time' && typeof value === 'object' && value !== null
+                          ? formatTimestamp(value)
+                          : value}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -122,3 +113,28 @@ export default function ListUsers() {
     </>
   );
 }
+
+function formatTimestamp(ts) {
+  if (ts && typeof ts === 'object' && 'seconds' in ts) {
+    const date = new Date(ts.seconds * 1000);
+    return date.toLocaleString();
+  }
+  return JSON.stringify(ts);
+};
+
+const FIELD_ORDER = [
+  'id', 'username', 'user_name', 'user_email', "user_pwd", 'user_role', 'user_account_state'
+];
+
+function sortFields(user) {
+  const entries = Object.entries(user);
+  // Sort by FIELD_ORDER, then the rest alphabetically
+  return entries.sort(([a], [b]) => {
+    const ia = FIELD_ORDER.indexOf(a);
+    const ib = FIELD_ORDER.indexOf(b);
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1) return -1;
+    if (ib !== -1) return 1;
+    return a.localeCompare(b);
+  });
+};

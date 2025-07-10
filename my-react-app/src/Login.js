@@ -9,7 +9,8 @@ const LoginForm = ({
   password,
   setUsername,
   setPassword,
-  handleSubmit
+  handleSubmit,
+  loading
 }) => {
 
   return (
@@ -35,7 +36,20 @@ const LoginForm = ({
           autoComplete="current-password"
         />
       </div>
-      <button className="btn btn-primary btn-large" type="submit">Log In</button>
+      <button 
+        className="btn btn-primary btn-large" 
+        type="submit"
+        disabled={loading}
+      >
+        {loading ? (
+          <>
+            Logging in...
+            <span className="spinner"/>
+          </>
+        ) : (
+        'Log In'
+        )}
+      </button>
     </form>
   );
 };
@@ -44,14 +58,16 @@ export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError("");
+    setLoading(true);
 
     try {
-      const response = await fetch('/rest/login/account', {
+      const request = await fetch('/rest/login/account', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -62,21 +78,26 @@ export default function Login() {
         }),
       });
 
-      if (response.ok) {
-        var token = await response.json();
-        if (token) {
-          console.log("Login successful, token received:", token);
-          sessionStorage.setItem('authToken', JSON.stringify(token));
+      if (request.ok) {
+        var response = request.json();
+        if (response) {
+          console.log("Login successful, user info received." + response);
+          const { /**token,*/ username, photo, role } = await response;
+          sessionStorage.setItem('userInfo', JSON.stringify({ username, photo, role }));
+          //sessionStorage.setItem('authToken', token); // Store only non-sensitive info
         }
         navigate('/');
-      } else if (response.status === 404 || response.status === 401) {
+      } else if (request.status === 404 || request.status === 401) {
         setError("Invalid username or password.");
+        setLoading(false);
       } else {
         setError("An unexpected error occurred. Please try again later.");
+        setLoading(false);
       }
     } catch (error) {
       console.error("Login error:", error);
       setError("An unexpected error occurred. Please try again later.");
+      setLoading(false);
     }
   };
 
@@ -94,6 +115,7 @@ export default function Login() {
             setUsername={setUsername}
             setPassword={setPassword}
             handleSubmit={handleSubmit}
+            loading={loading}
           />
           {error && <p className="error">{error}</p>}
           <div style={{ marginTop: '10px' }}>
@@ -106,9 +128,4 @@ export default function Login() {
       </div>
     </>
   );
-}
-
-export function logoutAndRedirect(navigate) {
-  sessionStorage.removeItem('authToken');
-  navigate('/login');
 }
