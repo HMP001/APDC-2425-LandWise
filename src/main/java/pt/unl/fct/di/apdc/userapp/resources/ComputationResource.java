@@ -4,6 +4,8 @@ package pt.unl.fct.di.apdc.userapp.resources;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.logging.Logger;
 
 import org.apache.commons.codec.digest.DigestUtils;
@@ -15,6 +17,7 @@ import com.google.cloud.datastore.Key;
 import com.google.cloud.datastore.PathElement;
 import com.google.cloud.datastore.Query;
 import com.google.cloud.datastore.QueryResults;
+import com.google.cloud.datastore.StructuredQuery;
 import com.google.cloud.datastore.Transaction;
 import com.google.cloud.datastore.Value;
 import com.google.gson.Gson;
@@ -26,6 +29,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.Response.Status;
+import javassist.bytecode.Descriptor.Iterator;
 import pt.unl.fct.di.apdc.userapp.util.ChangeAttributes;
 import pt.unl.fct.di.apdc.userapp.util.ChangePassword;
 import pt.unl.fct.di.apdc.userapp.util.ChangeRole;
@@ -504,6 +508,147 @@ public class ComputationResource {
 
         return Response.ok("{\"message\":\"Account deletion requested successfully.\"}").build();
     }
+
+    @POST
+@Path("/listActiveUsers")
+@Consumes(MediaType.APPLICATION_JSON)
+@Produces(MediaType.APPLICATION_JSON)
+public Response listActiveUsers(TokenAuth token) {
+    LOG.fine("List active users invoked by: " + (token != null ? token.username : "null"));
+
+    if (token == null) {
+        return Response.status(Status.UNAUTHORIZED)
+                .entity("{\"message\":\"Missing token.\"}")
+                .build();
+    }
+
+    long now = System.currentTimeMillis();
+    if (now > token.validateTo) {
+        return Response.status(Status.UNAUTHORIZED)
+                .entity("{\"message\":\"Token expired.\"}")
+                .build();
+    }
+
+    Key logoutKey = datastore.newKeyFactory()
+            .addAncestor(PathElement.of("User", token.username))
+            .setKind("RevokedToken")
+            .newKey(token.magicnumber);
+    if (datastore.get(logoutKey) != null) {
+        return Response.status(Status.BAD_REQUEST)
+                .entity("{\"message\":\"Token already revoked.\"}")
+                .build();
+    }
+
+    if (!("admin".equals(token.role) || "backoffice".equals(token.role))) {
+        return Response.status(Status.FORBIDDEN)
+                .entity("{\"message\":\"Role not authorized to list active users.\"}")
+                .build();
+    }
+
+    Query<Entity> query = Query.newEntityQueryBuilder()
+            .setKind("User")
+            .setFilter(
+                com.google.cloud.datastore.StructuredQuery.PropertyFilter.eq(
+                    "user_account_state", "ACTIVE"
+                )
+            )
+            .build();
+
+    QueryResults<Entity> results = datastore.run(query);
+
+    Map<String, Map<String, Object>> activeUsers = new HashMap<>();
+    while (results.hasNext()) {
+        Entity user = results.next();
+        if ("backoffice".equals(token.role)) {
+            String r = user.getString("user_role");
+            if (!r.equals("enduser") && !r.equals("partner")) {
+                continue;
+            }
+        }
+        Map<String, Object> userData = entityToMap(user, token.role);
+        activeUsers.put(user.getKey().getName(), userData);
+    }
+
+    return Response.ok(new Gson().toJson(activeUsers)).build();
+}
+@POST
+@Path("/listInactiveAndBlockedUsers")
+@Consumes(MediaType.APPLICATION_JSON)
+@Produces(MediaType.APPLICATION_JSON)
+public Response listInactiveAndBlockedUsers(TokenAuth token) {
+    LOG.fine("List inactive and blocked users invoked by: " + (token != null ? token.username : "null"));
+
+    if (token == null) {
+        return Response.status(Status.UNAUTHORIZED)
+                .entity("{\"message\":\"Missing token.\"}")
+                .build();
+    }
+
+    long now = System.currentTimeMillis();
+    if (now > token.validateTo) {
+        return Response.status(Status.UNAUTHORIZED)
+                .entity("{\"message\":\"Token expired.\"}")
+                .build();
+    }
+
+    // 2. Verificar revogação do token
+    Key logoutKey = datastore.newKeyFactory()
+            .addAncestor(PathElement.of("User", token.username))
+            .setKind("RevokedToken")
+            .newKey(token.magicnumber);
+    if (datastore.get(logoutKey) != null) {
+        return Response.status(Status.BAD_REQUEST)
+                .entity("{\"message\":\"Token already revoked.\"}")
+                .build();
+    }
+
+    // 3. Verificar permissões
+    if (!("admin".equals(token.role) || "backoffice".equals(token.role))) {
+        return Response.status(Status.FORBIDDEN)
+                .entity("{\"message\":\"Role not authorized to list inactive and blocked users.\"}")
+                .build();
+    }
+
+    List<Entity> allResults = new ArrayList<>();
+
+    Query<Entity> inactiveQuery = Query.newEntityQueryBuilder()
+            .setKind("User")
+            .setFilter(
+                StructuredQuery.PropertyFilter.eq("user_account_state", "INACTIVE")
+            )
+            .build();
+    QueryResults<Entity> inactiveResults = datastore.run(inactiveQuery);
+    inactiveResults.forEachRemaining(allResults::add);
+
+    // Query para utilizadores com estado BLOCKED
+    Query<Entity> blockedQuery = Query.newEntityQueryBuilder()
+            .setKind("User")
+            .setFilter(
+                StructuredQuery.PropertyFilter.eq("user_account_state", "BLOCKED")
+            )
+            .build();
+    QueryResults<Entity> blockedResults = datastore.run(blockedQuery);
+    blockedResults.forEachRemaining(allResults::add);
+
+    Map<String, Map<String, Object>> users = new HashMap<>();
+    Iterator<Entity> results = allResults.iterator();
+    while (results.hasNext()) {
+        Entity user = results.next();
+        // Aplicar filtros de visibilidade conforme o role do token
+        if ("backoffice".equals(token.role)) {
+            String r = user.getString("user_role");
+            if (!r.equals("enduser") && !r.equals("partner")) {
+                continue;
+            }
+        }
+        Map<String, Object> userData = entityToMap(user, token.role);
+        users.put(user.getKey().getName(), userData);
+    }
+
+    return Response.ok(new Gson().toJson(users)).build();
+}
+
+
 }	
 
 
