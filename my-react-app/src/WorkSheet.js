@@ -6,6 +6,7 @@ import './WorkSheet.css';
 import { FaChevronUp, FaChevronDown } from 'react-icons/fa';
 import CheckRequests from './CheckRequests';
 import './AuthForm.css';
+import proj4 from 'proj4'
 
 async function fetchWorkSheet(id, navigate) {
   try {
@@ -444,6 +445,17 @@ const WorksheetDisplay = ({
             disabled={isViewMode}
           />
 
+          <label className="form-label" htmlFor="issuing_user_id">Issuing User ID:</label>
+          <input
+            className="form-input"
+            id="issuing_user_id"
+            type="text"
+            name="issuing_user_id"
+            value={worksheet.issuing_user_id || ""}
+            onChange={handleChange}
+            disabled={isViewMode}
+          />
+
           <label className="form-label" htmlFor="posa_code">POSA Code:</label>
           <input
             className="form-input"
@@ -810,6 +822,7 @@ export default function WorkSheet({ mode }) {
     issue_date: '',
     award_date: '',
     service_provider_id: '',
+    issuing_user_id: '',
     posa_code: '',
     posa_description: '',
     posp_code: '',
@@ -933,6 +946,7 @@ export function ViewWorkSheet() {
     issue_date: '',
     award_date: '',
     service_provider_id: '',
+    issuing_user_id: '',
     posa_code: '',
     posa_description: '',
     posp_code: '',
@@ -966,7 +980,31 @@ export function ViewWorkSheet() {
       <div className='worksheet-form-container'>
         <div className='worksheet-container'>
           <form className="worksheet-form">
-            <h2 className="worksheet-header">View WorkSheet</h2>
+            <div className='worksheet-header-row'>
+              <h2 className="worksheet-header">WorkSheet Details</h2>
+              <button
+                className="btn btn-secondary"
+                type="button"
+                onClick={async () => {
+                  const crsCode = window.prompt(
+                    "Enter desired CRS code (e.g., EPSG:4326 for WGS84, EPSG:3763 for Portugal):",
+                    "EPSG:4326"
+                  );
+                  if (!crsCode) return;
+                  // Optionally, you could convert coordinates here if needed
+                  const geojson = await worksheetToGeoJSON(form, crsCode);
+                  const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: "application/geo+json" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `worksheet-${form.id || 'export'}.geojson`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                Download as GeoJSON
+              </button>
+            </div>
             <WorksheetDisplay
               worksheet={form}
               setForm={setForm}
@@ -978,6 +1016,53 @@ export function ViewWorkSheet() {
       </div>
     </>
   );
+}
+
+async function worksheetToGeoJSON(worksheet, crsCode = 'EPSG:4326') {
+  const features = await Promise.all(
+    Object.values(worksheet.features).map(async (feature) => {
+      try {
+        const convertCoords = await convertCoordinates(feature.geometry.coordinates, 'EPSG:4326', crsCode);
+        return {
+          ...feature,
+          geometry: {
+            ...feature.geometry,
+            coordinates: convertCoords
+          }
+        };
+      } catch (error) {
+        console.error(`Error converting coordinates for feature ${feature.key}:`, error);
+        return null; // Skip this feature if conversion fails
+      }
+    })
+  );
+
+  return {
+    type: 'FeatureCollection',
+    name: worksheet.title,
+    crs: {
+      type: 'name',
+      properties: { name: `urn:ogc:def:crs:${crsCode}` }
+    },
+    features: features.filter(f => f), // Filter out any null features that failed conversion
+    metadata: {
+      id: worksheet.id,
+      title: worksheet.title,
+      status: worksheet.status,
+      starting_date: worksheet.starting_date,
+      finishing_date: worksheet.finishing_date,
+      issue_date: worksheet.issue_date,
+      service_provider_id: worksheet.service_provider_id,
+      award_date: worksheet.award_date,
+      issuing_user_id: worksheet.issuing_user_id,
+      aigp: worksheet.aigp,
+      posa_code: worksheet.posa_code,
+      posa_description: worksheet.posa_description,
+      posp_code: worksheet.posp_code,
+      posp_description: worksheet.posp_description,
+      operations: worksheet.operations
+    }
+  };
 }
 
 export function ListWorkSheets() {
@@ -1110,6 +1195,7 @@ function normalizeWorksheet(data) {
     issue_date: data.issue_date || '',
     award_date: data.award_date || '',
     service_provider_id: data.service_provider_id || '',
+    issuing_user_id: data.issuing_user_id || '',
     posa_code: data.posa_code || '',
     posa_description: data.posa_description || '',
     posp_code: data.posp_code || '',
@@ -1241,13 +1327,14 @@ const convertGeoJSONToWorksheet = (geoJsonData) => {
 
   const result = {
     id: allMetadata.id || '', // Include ID from metadata
-    title: allMetadata.title || '',
+    title: allMetadata.title || geoJsonData.name || '',
     status: allMetadata.status || '',
     starting_date: allMetadata.starting_date || '',
     finishing_date: allMetadata.finishing_date || '',
     issue_date: allMetadata.issue_date || '',
     award_date: allMetadata.award_date || '',
     service_provider_id: allMetadata.service_provider_id || '',
+    issuing_user_id: allMetadata.issuing_user_id || '',
     posa_code: allMetadata.posa_code || '',
     posa_description: allMetadata.posa_description || '',
     posp_code: allMetadata.posp_code || '',
@@ -1732,6 +1819,26 @@ function extractSampleCoordinates(feature) {
   }
 }
 
+async function ensureProj4Definition(epsgCode) {
+  if (proj4.defs[epsgCode]) return; // Already defined
+  const codeNum = epsgCode.replace('EPSG:', '');
+  const url = `https://epsg.io/${codeNum}.proj4`;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch EPSG definition for ${epsgCode}`);
+    }
+    const proj4Def = await response.text();
+    proj4.defs(epsgCode, proj4Def);
+  } catch (error) {
+    console.error(`Error fetching EPSG definition for ${epsgCode}:`, error);
+    throw new Error(`Could not load EPSG definition for ${epsgCode}. Please ensure you have internet access or the definition is available locally.`);
+  }
+}
+
+proj4.defs("EPSG:3763","+proj=tmerc +lat_0=39.6682583333333 +lon_0=-8.13310833333333 +k=1 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs");
+proj4.defs("EPSG:4326", proj4.WGS84);
+
 /**
  * Convert coordinates using local approximation (no external API calls)
  * @param {number} x - X coordinate
@@ -1740,7 +1847,7 @@ function extractSampleCoordinates(feature) {
  * @param {string} targetCRS - Target CRS code (e.g., 'EPSG:4326')
  * @returns {Promise<Array>} - Converted [lng, lat] coordinates
  */
-async function convertCoordinatesWithEPSGIO(x, y, sourceCRS, targetCRS = 'EPSG:4326') {
+async function convertCoordinates(x, y, sourceCRS, targetCRS = 'EPSG:4326') {
   try {
     // If source and target are the same, return as-is
     if (sourceCRS === targetCRS) {
@@ -1748,20 +1855,17 @@ async function convertCoordinatesWithEPSGIO(x, y, sourceCRS, targetCRS = 'EPSG:4
     }
 
     // For EPSG:3763 (Portugal TM06) to EPSG:4326 (WGS84) conversion
-    // Using simplified approximation - this is not precise but avoids external API calls
     if (sourceCRS === 'EPSG:3763' && targetCRS === 'EPSG:4326') {
-      // Very rough approximation for Portuguese coordinates
-      // These are approximate conversion factors - not precise!
-      const lng = -9.0 + (x / 111320);  // Rough longitude conversion
-      const lat = 39.5 + (y / 110540);  // Rough latitude conversion
+      const latlng = proj4('EPSG:3763', 'EPSG:4326', [x, y]);
 
-      console.log(`Converted ${x}, ${y} (EPSG:3763) to ${lng}, ${lat} (WGS84) using approximation`);
-      return [lng, lat];
+      console.log(`Converted ${x}, ${y} (EPSG:3763) to ${latlng[0]}, ${latlng[1]} (WGS84) using approximation`);
+      return latlng;
     }
+    await ensureProj4Definition(sourceCRS); // Ensure proj4 definition is loaded
 
-    // For other coordinate systems, return original coordinates with warning
-    console.warn(`Coordinate conversion from ${sourceCRS} to ${targetCRS} not supported locally. Using original coordinates.`);
-    return [x, y];
+    // For other coordinate systems, return espg.io coordinates with warning
+    console.warn(`Coordinate conversion from ${sourceCRS} to ${targetCRS} not completely supported. Using espg.io proj4 definition.`);
+    return proj4(sourceCRS, targetCRS, [x, y]);
 
   } catch (error) {
     console.error('Coordinate conversion error:', error);
@@ -1780,29 +1884,29 @@ async function convertCoordinatesWithEPSGIO(x, y, sourceCRS, targetCRS = 'EPSG:4
 async function convertGeometryCoordinates(coordinates, geometryType, sourceCRS, targetCRS = 'EPSG:4326') {
   switch (geometryType) {
     case 'Point':
-      return await convertCoordinatesWithEPSGIO(coordinates[0], coordinates[1], sourceCRS, targetCRS);
+      return await convertCoordinates(coordinates[0], coordinates[1], sourceCRS, targetCRS);
 
     case 'LineString':
       return await Promise.all(
-        coordinates.map(coord => convertCoordinatesWithEPSGIO(coord[0], coord[1], sourceCRS, targetCRS))
+        coordinates.map(coord => convertCoordinates(coord[0], coord[1], sourceCRS, targetCRS))
       );
 
     case 'Polygon':
       return await Promise.all(
         coordinates.map(ring =>
-          Promise.all(ring.map(coord => convertCoordinatesWithEPSGIO(coord[0], coord[1], sourceCRS, targetCRS)))
+          Promise.all(ring.map(coord => convertCoordinates(coord[0], coord[1], sourceCRS, targetCRS)))
         )
       );
 
     case 'MultiPoint':
       return await Promise.all(
-        coordinates.map(coord => convertCoordinatesWithEPSGIO(coord[0], coord[1], sourceCRS, targetCRS))
+        coordinates.map(coord => convertCoordinates(coord[0], coord[1], sourceCRS, targetCRS))
       );
 
     case 'MultiLineString':
       return await Promise.all(
         coordinates.map(line =>
-          Promise.all(line.map(coord => convertCoordinatesWithEPSGIO(coord[0], coord[1], sourceCRS, targetCRS)))
+          Promise.all(line.map(coord => convertCoordinates(coord[0], coord[1], sourceCRS, targetCRS)))
         )
       );
 
@@ -1810,7 +1914,7 @@ async function convertGeometryCoordinates(coordinates, geometryType, sourceCRS, 
       return await Promise.all(
         coordinates.map(polygon =>
           Promise.all(polygon.map(ring =>
-            Promise.all(ring.map(coord => convertCoordinatesWithEPSGIO(coord[0], coord[1], sourceCRS, targetCRS)))
+            Promise.all(ring.map(coord => convertCoordinates(coord[0], coord[1], sourceCRS, targetCRS)))
           ))
         )
       );

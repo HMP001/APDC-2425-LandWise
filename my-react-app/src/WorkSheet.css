@@ -47,6 +47,13 @@
   padding: 40px 0;
 }
 
+.worksheet-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: 180px 1fr;
