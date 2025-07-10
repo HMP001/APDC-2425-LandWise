@@ -79,12 +79,14 @@ public class LoginResource {
             }
             
             String foto = user.contains("user_photo") ? user.getString("user_photo") : null;
+            String email = user.getString("user_email");
 
             // Prepara claims JWT
             Map<String, Object> fields = new HashMap<>();
             fields.put("role", role);
             fields.put("username", data.username);
             fields.put("photo", foto != null ? foto : "");
+            fields.put("email", email);
 
             // Cria token JWT
             String token = JWTToken.createJWT(data.username, fields);
@@ -108,6 +110,8 @@ public class LoginResource {
             responseData.addProperty("role", role);
             responseData.addProperty("photo", foto != null ? foto : "");
             responseData.addProperty("token", token);
+            responseData.addProperty("email", email);
+
 
             LOG.info("Login successful for user: " + data.username);
             return Response.ok().cookie(cookie).entity(responseData.toString()).build();
