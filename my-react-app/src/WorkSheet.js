@@ -1256,8 +1256,8 @@ const convertGeoJSONToWorksheet = (geoJsonData) => {
     operations: allMetadata.operations || [],
     polygon: [], // Keep empty for backward compatibility
     features: Object.fromEntries(
-      (geoJsonData.features || []).map((feature) => {
-        const key = feature.properties?.polygon_id || Date.now();
+      (geoJsonData.features || []).map((feature, idx) => {
+        const key = feature.properties?.polygon_id || feature.properties?.id || `${Date.now()}_${idx}`;;
         return [key, {...feature, key}];
       })
     )
