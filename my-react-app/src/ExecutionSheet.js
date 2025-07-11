@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import './WorkSheet.css';
+import { useNavigate } from 'react-router-dom';
+import './ExecutionSheet.css';
+import CheckRequests from './CheckRequests';
+import { topBar } from './TopBar';
 
 /**
  * ExecutionSheet Component - UI for viewing and managing execution sheets
@@ -411,5 +414,59 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
     </div>
   );
 };
-
 export default ExecutionSheet;
+
+export function ViewExecutionSheet(id) {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [executionSheetData, setExecutionSheetData] = useState(null);
+  const [error, setError] = useState(null);
+  
+  useEffect(() => {
+    let mounted = true;
+    async function fetchData() {
+      try {
+        const response = await fetch(`/rest/executionsheet/${id}`);
+        if (!response.ok) throw new Error('Failed to fetch execution sheet');
+        const data = await response.json();
+        CheckRequests(data, navigate);
+        if (mounted) setExecutionSheetData(data);
+      } catch (err) {
+        console.error('Error fetching execution sheet:', err);
+        if (mounted) setError('Failed to load execution sheet data.');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+    fetchData();
+    return () => {
+      mounted = false;
+    };
+  }, [id, navigate]);
+
+  if (loading) {
+      return (
+        <>
+          {topBar(navigate)}
+          <div className="loading-container">
+            <div className="loading-spinner"></div>
+            <p>Loading Execution Sheet...</p>
+          </div>
+        </>
+      );
+    }
+  /**if (error) {
+    return <>{topBar(navigate)}<div className="error-message">{error}</div></>;
+  }*/
+  return (
+    <>
+      {topBar(navigate)}
+      <ExecutionSheet
+        executionSheetData={executionSheetData}
+        onClose={() => navigate('/worksheet/list')}
+        isEditable={false}
+      />
+    </>
+  );
+}
+  

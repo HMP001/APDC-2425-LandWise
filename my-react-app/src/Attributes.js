@@ -5,8 +5,8 @@ import CheckRequests from './CheckRequests';
 import './AuthForm.css';
 import roles from './roles'; // Assuming roles.js exports the roles object
 
-async function fetchAttributes(navigate) {
-  const response = await fetch('/rest/user', {
+async function fetchAttributes(navigate, username) {
+  const response = await fetch(`/rest/utils/user/${username}`, {
     headers: {
       'Content-Type': 'application/json'
     }
@@ -34,28 +34,6 @@ const attributesForms = ({
           value={attributes.username}
           onChange={changeData}
           autoComplete="username"
-        />
-
-        <label className="form-label" htmlFor="password">Password:</label>
-        <input
-          className="form-input"
-          id="password"
-          type="password"
-          name="user_pwd"
-          value={attributes.user_pwd}
-          onChange={changeData}
-          autoComplete="new-password"
-        />
-
-        <label className="form-label" htmlFor="confirmation">Confirm Password:</label>
-        <input
-          className="form-input"
-          id="confirmation"
-          type="password"
-          name="confirmation"
-          value={attributes.confirmation}
-          onChange={changeData}
-          autoComplete="new-password"
         />
 
         <label className="form-label" htmlFor="name">Name:</label>
@@ -321,20 +299,41 @@ export function Attributes() {
   const [initialAttributes, setInitialAttributes] = useState([]);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [loadingUser, setLoadingUser] = useState(true);
   const [loading, setLoading] = useState(false);
 
+  const { username } = JSON.parse(sessionStorage.getItem('userInfo') || {});
   useEffect(() => {
-    fetchAttributes(navigate)
+    let isMounted = true;
+    fetchAttributes(navigate, username)
       .then(attributes => {
         setAttributes(attributes);
         setInitialAttributes(attributes);
       })
       .catch(error => {
         console.error("Error fetching attributes:", error);
+      })
+      .finally(() => {
+        if (isMounted) {
+          setLoadingUser(false);
+        }
       });
-  }, [navigate]);
+    return () => {
+      isMounted = false; // Cleanup to prevent state updates if unmounted
+    }
+  }, [navigate, username]);
 
-  const { username } = JSON.parse(sessionStorage.getItem('userInfo') || {});
+  if (loadingUser) {
+    return (
+      <>
+        {topBar(navigate)}
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Loading user...</p>
+        </div>
+      </>
+    );
+  }
 
   const changeData = (event) => {
     setAttributes({ ...attributes, [event.target.name]: event.target.value });
@@ -348,10 +347,9 @@ export function Attributes() {
     setSuccess(false);
     setLoading(true);
 
-    const data = {};
-    attributes.forEach(attr => {
-      data[attr.name] = attr.value;
-    });
+    const stringAttributes = Object.fromEntries(
+      Object.entries(attributes).map(([key, value]) => [key, String(value)])
+    );
 
     try {
       const response = await fetch('/rest/utils/changeattributes', {
@@ -361,7 +359,7 @@ export function Attributes() {
         },
         body: JSON.stringify({
           targetUsername: username,
-          data
+          attributes: stringAttributes
         })
       });
 
@@ -377,6 +375,8 @@ export function Attributes() {
       setError("An error occurred while updating attributes.");
       setAttributes(initialAttributes);
       setLoading(false);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -384,8 +384,8 @@ export function Attributes() {
     <>
       {topBar(navigate)}
       <div className="AuthForm">
-        {success && <p className="success">Attributes updated successfully!</p>}
         <header className="AuthForm-header">
+          
           {error && <p className="error">{error}</p>}
           <p>Edit your account</p>
           {attributesForms({
@@ -394,6 +394,7 @@ export function Attributes() {
             handleSubmit,
             loading
           })}
+          {success && <p className="success">Attributes updated successfully!</p>}
         </header>
       </div>
     </>

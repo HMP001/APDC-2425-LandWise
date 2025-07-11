@@ -451,7 +451,8 @@ function Register() {
           confirmation: userData.confirmation,
           email: userData.email,
           name: userData.name,
-          telephone: userData.telephone,
+          telephone: userData.telephone1,
+          telephone2: userData.telephone2,
           profile: userData.profile,
           role: userData.role,
           nif: userData.nif,
@@ -523,7 +524,7 @@ function Register() {
           )}
           <div style={{ marginTop: '10px' }}>
             <span>Already have an account? </span>
-            <Link to="/rest/login" style={{ color: 'blue', textDecoration: 'underline', cursor: 'pointer' }}>
+            <Link to="/login" style={{ color: 'blue', textDecoration: 'underline', cursor: 'pointer' }}>
               Login here
             </Link>
           </div>

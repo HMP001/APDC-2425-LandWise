@@ -120,7 +120,7 @@ export default function Login() {
           {error && <p className="error">{error}</p>}
           <div style={{ marginTop: '10px' }}>
             <span>Don't have an account? </span>
-            <Link to="/rest/register" style={{ color: 'blue', textDecoration: 'underline', cursor: 'pointer' }}>
+            <Link to="/register" style={{ color: 'blue', textDecoration: 'underline', cursor: 'pointer' }}>
               Register here
             </Link>
           </div>

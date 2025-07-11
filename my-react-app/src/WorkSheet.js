@@ -28,99 +28,15 @@ async function fetchWorkSheet(id, navigate) {
   }
 }
 
-const WorksheetDisplay = ({
+const WorksheetDisplay = React.memo(function WorksheetDisplay({
   worksheet,
   setWorksheet,
   isViewMode
-}) => {
+}) {
   const operations = Array.isArray(worksheet.operations) ? worksheet.operations : [];
   const mapRef = useRef(null);
   const [hasAutoCenter, setHasAutoCenter] = useState(false);
   const [selectedFeature, setSelectedFeature] = useState(null);
-
-  console.log("WorksheetDisplay form data:", worksheet);
-  console.log("Polygon to render:", worksheet.polygon);
-  console.log("Features to render:", worksheet.features);
-  console.log("AIGP data:", worksheet.aigp);
-  console.log("Title:", worksheet.title);
-  console.log("Status:", worksheet.status);
-
-  const handleSelectedFeatureChange = (event) => {
-    const { name, value } = event.target;
-
-    setWorksheet((prevForm) => {
-      const updatedFeatures = {
-        ...prevForm.features,
-        [selectedFeature]: {
-          ...prevForm.features[selectedFeature],
-          properties: {
-            ...prevForm.features[selectedFeature].properties,
-            [name]: value
-          }
-        }
-      };
-
-      let updatedAigp = { ...(prevForm.aigp || {}) };
-      if (name === 'aigp') {
-        const prevAigpValue = prevForm.features[selectedFeature]?.properties?.aigp;
-
-        // Decrement count for previous AIGP if changed
-        if (prevAigpValue && prevAigpValue !== value && updatedAigp[prevAigpValue]) {
-          updatedAigp[prevAigpValue]--;
-          if (updatedAigp[prevAigpValue] <= 0) delete updatedAigp[prevAigpValue];
-        }
-        // Increment or set count for new AIGP
-        if (value) {
-          updatedAigp[value] = (updatedAigp[value] || 0) + 1;
-        }
-      }
-
-      return {
-        ...prevForm,
-        features: updatedFeatures,
-        aigp: updatedAigp
-      };
-    });
-    
-  };
-
-  const handleAigpChange = (event) => {
-    const { value } = event.target;
-    // Convert comma-separated string to array
-    const aigpArray = value.split(',').map(item => item.trim()).filter(item => item !== '');
-    setWorksheet((prevForm) => {
-      const newAigp = {};
-      aigpArray.forEach(aigp => {
-        if (aigp) newAigp[aigp] = Number.MAX_SAFE_INTEGER; // Set a default value for each AIGP
-      });
-      return {
-        ...prevForm,
-        aigp: newAigp
-      };
-    });
-  };
-
-  const handleOperationChange = (index, event) => {
-    const { name, value } = event.target;
-    setWorksheet((prevForm) => {
-      const operations = [...prevForm.operations];
-      operations[index] = {
-        ...operations[index],
-        [name]: value
-      };
-      return {
-        ...prevForm,
-        operations
-      };
-    });
-  };
-
-  const handleRemoveOperation = (index) => {
-    setWorksheet((prevForm) => ({
-      ...prevForm,
-      operations: prevForm.operations.filter((_, i) => i !== index)
-    }));
-  };
 
   const onPolygonComplete = (polygonObject) => {
     const path = polygonObject.getPath().getArray().map(latLng => [
@@ -145,8 +61,6 @@ const WorksheetDisplay = ({
 
     polygonObject.setMap(null); // Remove the polygon from the map
 
-    console.log("Adding new polygon feature:", newFeature);
-
     setWorksheet((prevForm) => {
       const updatedAigp = { ...(prevForm.aigp || {}) };
       const aigpKey = newFeature.properties.aigp;
@@ -160,47 +74,134 @@ const WorksheetDisplay = ({
     setSelectedFeature(newFeature.key); // Set the newly created feature as selected
   };
 
-  const handleChange = (event) => {
-    const { name, value } = event.target;
-    setWorksheet((prevForm) => ({
-      ...prevForm,
-      [name]: value
-    }));
-  };
-
-  useEffect(() => {
-    if (
-      selectedFeature &&
-      worksheet.features[selectedFeature] &&
-      mapRef.current &&
-      window.google &&
-      worksheet.features[selectedFeature].geometry
-    ) {
-      setTimeout(() => {
-        const bounds = getFeatureBounds(worksheet.features[selectedFeature]);
-        if (bounds && !bounds.isEmpty()) {
-          mapRef.current.fitBounds(bounds);
-        }
-      }, 0);
+  const center = () => {
+    if (!selectedFeature) return { lat: 38.659784, lng: -9.202765 };
+    const feature = worksheet.features[selectedFeature];
+    if (!feature || !feature.geometry || !feature.geometry.coordinates) return { lat: 38.659784, lng: -9.202765 };
+    console.log("centering on feature:", feature);
+    const bounds = getFeatureBounds(feature);
+    if (bounds && !bounds.isEmpty()) {
+      mapRef.current.fitBounds(bounds);
+      const center = bounds.getCenter();
+      return { lat: center.lat(), lng: center.lng() };
     }
-  }, [selectedFeature, worksheet.features]);
+    return { lat: 38.659784, lng: -9.202765 };
+  };
 
   // Function to center map on a specific feature and select it
   const centerOnFeature = (feature) => {
     if (!feature.geometry || !feature.geometry.coordinates) return;
+    console.log("Centering on feature:", feature);
     setSelectedFeature(feature.key);
   };
 
   // Auto-center on first feature when features are loaded
-  useEffect(() => {
+  const handleMapLoad = (map) => {
+    mapRef.current = map;
     if (!hasAutoCenter && worksheet.features && Object.values(worksheet.features).length > 0 && mapRef.current) {
-      console.log("Auto-centering on first feature");
-      setTimeout(() => {
         centerOnFeature(worksheet.features[Object.keys(worksheet.features)[0]]);
         setHasAutoCenter(true);
-      }, 1000); // Delay to ensure map is fully loaded
     }
-  }, [worksheet.features, hasAutoCenter]);
+  };
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [originalCoords, setOriginalCoords] = useState(null);
+  const selectedPolygonRef = useRef(null);
+
+  // Reset editing state and stack when selectedFeature changes
+  useEffect(() => {
+    setIsEditing(false);
+    setOriginalCoords(null);
+  }, [selectedFeature]);
+
+  const handleEditClick = () => {
+    if (selectedFeature && worksheet.features[selectedFeature]) {
+      setOriginalCoords(
+        worksheet.features[selectedFeature].geometry.coordinates[0].map(coord => [...coord])
+      );
+      setIsEditing(true);
+    }
+  };
+
+  const handleUndoAllEdits = () => {
+    if (!selectedFeature || !worksheet.features[selectedFeature]) return;
+    
+    // Get the original coordinates from the state variable (not redeclaring)
+    const polygon = selectedPolygonRef.current?.polygon;
+    
+    if (polygon && polygon.getPath && originalCoords) {
+      const path = polygon.getPath();
+      
+      // Clear and rebuild the path with original coordinates
+      path.clear();
+      originalCoords.forEach(([lng, lat]) => {
+        path.push(new window.google.maps.LatLng(lat, lng));
+      });
+      
+      console.log("All edits undone, polygon reset to original state");
+    }
+  };
+
+  const handleStopEditing = () => {
+    const polygon = selectedPolygonRef.current?.polygon;
+    if (!polygon || !polygon.getPath) {
+      setIsEditing(false);
+      return;
+    }
+    const path = polygon.getPath();
+    const newCoords = path.getArray().map(latLng => [latLng.lng(), latLng.lat()]);
+    setWorksheet(prevForm => ({
+      ...prevForm,
+      features: {
+        ...prevForm.features,
+        [selectedFeature]: {
+          ...prevForm.features[selectedFeature],
+          geometry: {
+            ...prevForm.features[selectedFeature].geometry,
+            coordinates: [newCoords]
+          }
+        }
+      }
+    }));
+    setIsEditing(false);
+    setOriginalCoords(null);
+  };
+
+  const editingControls = (
+    <div style={{ display: 'flex', gap: 20, marginTop: 10, justifyContent: 'center' }}>
+      {!isEditing ? (
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={handleEditClick}
+          style={{ fontSize: '12px', padding: '5px 10px' }}
+          disabled={!selectedFeature}
+        >
+          Edit Polygon
+        </button>
+      ) : (
+        <>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={handleStopEditing}
+            style={{ fontSize: '12px', padding: '5px 10px' }}
+          >
+            Stop Editing
+          </button>
+          <button
+            type="button"
+            className="btn btn-warning"
+            style={{ fontSize: '12px', padding: '5px 10px' }}
+            onClick={handleUndoAllEdits}
+            disabled={!originalCoords || originalCoords.length === 0}
+          >
+            Reset to Original
+          </button>
+        </>
+      )}
+    </div>
+  );
 
   const renderFeatureOnMap = (feature, index) => {
     if (!feature.geometry) return null;
@@ -209,7 +210,7 @@ const WorksheetDisplay = ({
     const baseColor = `hsl(${(index * 60) % 360}, 70%, 60%)`;
     const strokeColor = `hsl(${(index * 60) % 360}, 70%, 40%)`;
     const ruralPropertyId = feature.properties?.rural_property_id;
-    const isSelected = selectedFeature === feature.key;
+    const isSelected = String(selectedFeature) === String(feature.key);
 
     switch (type) {
       case 'Point':
@@ -232,9 +233,11 @@ const WorksheetDisplay = ({
           />
         );
       case 'Polygon':
+        const isCurrentlySelected = String(selectedFeature) === String(feature.key);
+        
         const polygonElement = (
           <Polygon
-            key={`feature-polygon-${index}`}
+            key={isCurrentlySelected && isEditing ? `editing-${feature.key}` : `feature-polygon-${feature.key}`}
             paths={coordinates[0].map(coord => ({ lat: coord[1], lng: coord[0] }))}
             options={{
               fillColor: baseColor,
@@ -242,8 +245,9 @@ const WorksheetDisplay = ({
               strokeWeight: 2,
               strokeColor: strokeColor
             }}
-            onClick={() => { console.log("Clicked"); centerOnFeature(feature); }}
-            editable={!isViewMode}
+            onClick={() => centerOnFeature(feature)}
+            editable={!isViewMode && isCurrentlySelected && isEditing}
+            ref={isCurrentlySelected ? selectedPolygonRef : null}
           />
         );
 
@@ -252,7 +256,7 @@ const WorksheetDisplay = ({
           const centroid = calculatePolygonCentroid(coordinates[0]);
           const labelElement = (
             <InfoWindow
-              key={`feature-polygon-label-${index}`}
+              key={`feature-polygon-label-${feature.key}`}
               position={centroid}
               options={{
                 disableAutoPan: true,
@@ -350,343 +354,13 @@ const WorksheetDisplay = ({
   };
   return (
     <>
-      {/* General Info */}
-      <fieldset className="form-section">
-        <legend>General Information</legend>
-        <div className="form-grid">
-          <label className="form-label" htmlFor="id">ID:</label>
-          <input
-            className="form-input"
-            id="id"
-            type="text"
-            name="id"
-            value={worksheet.id || ""}
-            onChange={handleChange}
-            required
-            disabled={isViewMode}
-          />
+      <MemoizedGeneralInfo worksheet={worksheet} setWorksheet={setWorksheet} isViewMode={isViewMode} />
 
-          <label className="form-label" htmlFor="title">Title:</label>
-          <input
-            className="form-input"
-            id="title"
-            type="text"
-            name="title"
-            value={worksheet.title || ""}
-            onChange={handleChange}
-            required
-            disabled={isViewMode}
-          />
+      <MemoizedAigpInput worksheet={worksheet} setWorksheet={setWorksheet} isViewMode={isViewMode} />
 
-          <label className="form-label" htmlFor="status">Status:</label>
-          <input
-            className="form-input"
-            id="status"
-            type="text"
-            name="status"
-            value={worksheet.status || ""}
-            onChange={handleChange}
-            required
-            disabled={isViewMode}
-          />
+      <MemoizedOperations operations={operations} setWorksheet={setWorksheet} isViewMode={isViewMode} />
 
-          <label className="form-label" htmlFor="starting_date">Starting Date:</label>
-          <input
-            className="form-input"
-            id="starting_date"
-            type="date"
-            name="starting_date"
-            value={worksheet.starting_date || ""}
-            onChange={handleChange}
-            disabled={isViewMode}
-          />
-
-          <label className="form-label" htmlFor="finishing_date">Finishing Date:</label>
-          <input
-            className="form-input"
-            id="finishing_date"
-            type="date"
-            name="finishing_date"
-            value={worksheet.finishing_date || ""}
-            onChange={handleChange}
-            disabled={isViewMode}
-          />
-
-          <label className="form-label" htmlFor="issue_date">Issue Date:</label>
-          <input
-            className="form-input"
-            id="issue_date"
-            type="date"
-            name="issue_date"
-            value={worksheet.issue_date || ""}
-            onChange={handleChange}
-            disabled={isViewMode}
-          />
-
-          <label className="form-label" htmlFor="award_date">Award Date:</label>
-          <input
-            className="form-input"
-            id="award_date"
-            type="date"
-            name="award_date"
-            value={worksheet.award_date || ""}
-            onChange={handleChange}
-            disabled={isViewMode}
-          />
-
-          <label className="form-label" htmlFor="service_provider_id">Service Provider ID:</label>
-          <input
-            className="form-input"
-            id="service_provider_id"
-            type="text"
-            name="service_provider_id"
-            value={worksheet.service_provider_id || ""}
-            onChange={handleChange}
-            disabled={isViewMode}
-          />
-
-          <label className="form-label" htmlFor="issuing_user_id">Issuing User ID:</label>
-          <input
-            className="form-input"
-            id="issuing_user_id"
-            type="text"
-            name="issuing_user_id"
-            value={worksheet.issuing_user_id || ""}
-            onChange={handleChange}
-            disabled={isViewMode}
-          />
-
-          <label className="form-label" htmlFor="posa_code">POSA Code:</label>
-          <input
-            className="form-input"
-            id="posa_code"
-            type="text"
-            name="posa_code"
-            value={worksheet.posa_code || ""}
-            onChange={handleChange}
-            disabled={isViewMode}
-          />
-          <label className="form-label" htmlFor="posa_description">POSA Description:</label>
-          <input
-            className="form-input"
-            id="posa_description"
-            type="text"
-            name="posa_description"
-            value={worksheet.posa_description || ""}
-            onChange={handleChange}
-            disabled={isViewMode}
-          />
-          <label className="form-label" htmlFor="posp_code">POSP Code:</label>
-          <input
-            className="form-input"
-            id="posp_code"
-            type="text"
-            name="posp_code"
-            value={worksheet.posp_code || ""}
-            onChange={handleChange}
-            disabled={isViewMode}
-          />
-          <label className="form-label" htmlFor="posp_description">POSP Description:</label>
-          <input
-            className="form-input"
-            id="posp_description"
-            type="text"
-            name="posp_description"
-            value={worksheet.posp_description || ""}
-            onChange={handleChange}
-            disabled={isViewMode}
-          />
-        </div>
-      </fieldset>
-
-      {/* AIGP Details */}
-      <fieldset className="form-section">
-        <legend>AIGP Details</legend>
-        <div className="form-grid">
-          <label className="form-label" htmlFor="aigp">AIGP (comma-separated):</label>
-          <input
-            className="form-input"
-            id="aigp"
-            type="text"
-            name="aigp"
-            value={Object.keys(worksheet.aigp || {}).join(', ')}
-            onChange={handleAigpChange}
-            disabled={isViewMode}
-            placeholder="Enter AIGP values separated by commas"
-          />
-          <small style={{ fontSize: '12px', color: '#666', gridColumn: '1 / -1' }}>
-            Enter multiple AIGP values separated by commas (e.g., "AIGP001, AIGP002, AIGP003")
-          </small>
-        </div>
-      </fieldset>
-
-      {/* Operations */}
-      <fieldset className="form-section">
-        <legend>Operations</legend>
-        {operations.map((operation, index) => (
-          <div key={index} className="operation">
-            <label className="form-label" htmlFor={`operation_code_${index}`}>Operation Code:</label>
-            <input
-              className="form-input"
-              id={`operation_code_${index}`}
-              type="text"
-              name="operation_code"
-              value={operation.operation_code || ""}
-              onChange={(e) => handleOperationChange(index, e)}
-              disabled={isViewMode}
-            />
-            <label className="form-label" htmlFor={`operation_description_${index}`}>Operation Description:</label>
-            <input
-              className="form-input"
-              id={`operation_description_${index}`}
-              type="text"
-              name="operation_description"
-              value={operation.operation_description || ""}
-              onChange={(e) => handleOperationChange(index, e)}
-              disabled={isViewMode}
-            />
-            <label className="form-label" htmlFor={`area_ha_${index}`}>Area (ha):</label>
-            <input
-              className="form-input"
-              id={`area_ha_${index}`}
-              type="number"
-              name="area_ha"
-              value={operation.area_ha || ""}
-              onChange={(e) => handleOperationChange(index, e)}
-              disabled={isViewMode}
-            />
-            {!isViewMode && operations.length > 1 && (
-              <button
-                className="btn btn-danger btn-small"
-                type="button"
-                onClick={() => handleRemoveOperation(index)}
-                disabled={isViewMode || operations.length === 1}
-                style={{ marginLeft: 10, marginTop: 10, marginBottom: 10 }}
-              >
-                Remove
-              </button>
-            )}
-          </div>
-        ))}
-        {!isViewMode && (
-          <button
-            className="btn btn-success"
-            type="button"
-            disabled={isViewMode}
-            onClick={() => setWorksheet((prevForm) => ({
-              ...prevForm,
-              operations: [...prevForm.operations, { operation_code: '', operation_description: '', area_ha: '' }]
-            }))}>
-            Add Operation
-          </button>
-        )}
-      </fieldset>
-
-      {/* Selected Feature Details */}
-      {selectedFeature && worksheet.features[selectedFeature] && (
-        <fieldset className="form-section">
-          <legend>Selected Feature Details</legend>
-          <div className="form-grid">
-            <label className="form-label" htmlFor="feature_aigp">AIGP:</label>
-            <input
-              className="form-input"
-              id="feature_aigp"
-              type="text"
-              name="aigp"
-              value={worksheet.features[selectedFeature].properties?.aigp || ""}
-              onChange={handleSelectedFeatureChange}
-            />
-
-            <label className="form-label" htmlFor="feature_ui_id">UI ID (LandIT Worker):</label>
-            <input
-              className="form-input"
-              id="feature_ui_id"
-              type="text"
-              name="UI_id"
-              value={worksheet.features[selectedFeature].properties?.UI_id || ""}
-              onChange={handleSelectedFeatureChange}
-            />
-
-            <label className="form-label" htmlFor="feature_polygon_id">Polygon ID:</label>
-            <input
-              className="form-input"
-              id="feature_polygon_id"
-              type="text"
-              name="polygon_id"
-              value={worksheet.features[selectedFeature].properties?.polygon_id || ""}
-              onChange={handleSelectedFeatureChange}
-            />
-
-            <label className="form-label" htmlFor="feature_rural_property_id">Rural Property ID:</label>
-            <input
-              className="form-input"
-              id="feature_rural_property_id"
-              type="text"
-              name="rural_property_id"
-              value={worksheet.features[selectedFeature].properties?.rural_property_id || ""}
-              onChange={handleSelectedFeatureChange}
-            />
-
-            <label className="form-label" htmlFor="feature_geometry_type">Geometry Type:</label>
-            <input
-              className="form-input"
-              id="feature_geometry_type"
-              type="text"
-              value={worksheet.features[selectedFeature].geometry?.type || ""}
-              disabled
-              readOnly
-            />
-          </div>
-
-          <div style={{ marginTop: '10px', textAlign: 'center' }}>
-            <button
-              type="button"
-              onClick={() => setSelectedFeature(null)}
-              className="btn btn-secondary"
-              style={{ fontSize: '12px', padding: '5px 15px' }}
-            >
-              Clear Selection
-            </button>
-            <button
-              type="button"
-              className="btn btn-danger"
-              style={{ fontSize: '12px', padding: '5px 15px', marginLeft: '10px' }}
-              onClick={() => {
-                // Remove the selected feature from the worksheet
-                setWorksheet(prevForm => {
-                  const newFeatures = { ...prevForm.features };
-                  const removedFeature = newFeatures[selectedFeature];
-                  delete newFeatures[selectedFeature];
-
-                  // If the removed feature had an AIGP, decrement its count
-                  let updatedAigp = { ...prevForm.aigp };
-                  const aigpKey = removedFeature.properties?.aigp;
-                  if (aigpKey && updatedAigp[aigpKey]) {
-                    updatedAigp[aigpKey]--;
-                    if (updatedAigp[aigpKey] <= 0) {
-                      // Remove the key with a new object reference
-                      const { [aigpKey]: _, ...rest } = updatedAigp;
-                      updatedAigp = rest;
-                    }
-                  }
-
-                  const featureKeys = Object.keys(newFeatures);
-                  // If no features left, clear selected feature
-                  if (featureKeys.length === 0) {
-                    setSelectedFeature(null);
-                  } else {
-                    setSelectedFeature(featureKeys[0] || null);
-                  }
-                  return { ...prevForm, aigp: updatedAigp, features: newFeatures };
-                });
-                
-              }}
-            >
-              Remove Feature
-            </button>
-          </div>
-        </fieldset>
-      )}
+      <MemoizedSelectedFeature worksheet={worksheet} setWorksheet={setWorksheet} selectedFeature={selectedFeature} setSelectedFeature={setSelectedFeature} isViewMode={isViewMode} /> 
 
       {/* Feature Navigation Controls */}
       {worksheet.features && Object.keys(worksheet.features).length > 0 && (
@@ -701,7 +375,7 @@ const WorksheetDisplay = ({
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
               {Object.values(worksheet.features).map((feature, index) => {
-                const isSelected = selectedFeature === feature.key;
+                const isSelected = String(selectedFeature) === String(feature.key);
                 const displayLabel = feature.properties?.aigp && feature.properties?.polygon_id
                   ? `${feature.properties.aigp}-${feature.properties.polygon_id}`
                   : feature.properties?.aigp || `${feature.geometry?.type} ${index + 1}`;
@@ -736,7 +410,7 @@ const WorksheetDisplay = ({
           <div style={{ marginBottom: '10px', padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
             <p style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#666' }}>
               {worksheet.features && Object.values(worksheet.features).length > 0
-                ? `${Object.values(worksheet.features).length} feature(s) loaded: ${Object.values(worksheet.features).map(f => f.geometry?.type).join(', ')}`
+                ? `${Object.values(worksheet.features).length} feature(s) loaded`
                 : worksheet.polygon && worksheet.polygon.length > 0
                   ? `${Array.isArray(worksheet.polygon[0]) ? worksheet.polygon.length : 1} polygon(s) drawn`
                   : 'No features or polygons loaded'
@@ -772,10 +446,10 @@ const WorksheetDisplay = ({
         )}
         <GoogleMap
           ref={mapRef}
-          onLoad={map => mapRef.current = map}
+          onLoad={handleMapLoad}
           id="drawing-manager-example"
           mapContainerStyle={{ height: "400px", width: "100%" }}
-          center={{ lat: 38.659784, lng: -9.202765 }} // Default center FCT
+          center={center()}
           zoom={16}
         >
           {!isViewMode && (
@@ -806,10 +480,546 @@ const WorksheetDisplay = ({
             }).filter(element => element !== null)
           )}
         </GoogleMap>
+        {selectedFeature && !isViewMode && editingControls}  
       </fieldset>
     </>
   )
-};
+});
+
+const MemoizedGeneralInfo = React.memo(function GeneralInfo({ worksheet, setWorksheet, isViewMode }) {
+  const [localWorksheet, setLocalWorksheet] = useState(worksheet);
+  const handleLocalChange = (event) => {
+    const { name, value } = event.target;
+    setLocalWorksheet((prevForm) => ({
+      ...prevForm,
+      [name]: value
+    }));
+  };
+
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    // Update the main worksheet state with the local changes
+    setWorksheet((prevForm) => ({
+      ...prevForm,
+      [name]: value
+    }));
+  };
+  return <>
+    {/* General Info */}
+    <fieldset className="form-section">
+      <legend>General Information</legend>
+      <div className="form-grid">
+        <label className="form-label" htmlFor="id">ID:</label>
+        <input
+          className="form-input"
+          id="id"
+          type="text"
+          name="id"
+          value={localWorksheet.id || ""}
+          onChange={handleLocalChange}
+          onBlur={handleChange}
+          required
+          disabled={isViewMode}
+        />
+
+        <label className="form-label" htmlFor="title">Title:</label>
+        <input
+          className="form-input"
+          id="title"
+          type="text"
+          name="title"
+          value={localWorksheet.title || ""}
+          onChange={handleLocalChange}
+          onBlur={handleChange}
+          required
+          disabled={isViewMode}
+        />
+
+        <label className="form-label" htmlFor="status">Status:</label>
+        <input
+          className="form-input"
+          id="status"
+          type="text"
+          name="status"
+          value={localWorksheet.status || ""}
+          onChange={handleLocalChange}
+            onBlur={handleChange}
+          required
+          disabled={isViewMode}
+        />
+
+        <label className="form-label" htmlFor="starting_date">Starting Date:</label>
+        <input
+          className="form-input"
+          id="starting_date"
+          type="date"
+          name="starting_date"
+          value={localWorksheet.starting_date || ""}
+          onChange={handleLocalChange}
+          onBlur={handleChange}
+          disabled={isViewMode}
+        />
+
+        <label className="form-label" htmlFor="finishing_date">Finishing Date:</label>
+        <input
+          className="form-input"
+          id="finishing_date"
+          type="date"
+          name="finishing_date"
+          value={localWorksheet.finishing_date || ""}
+          onChange={handleLocalChange}
+          onBlur={handleChange}
+          disabled={isViewMode}
+        />
+
+        <label className="form-label" htmlFor="issue_date">Issue Date:</label>
+        <input
+          className="form-input"
+          id="issue_date"
+          type="date"
+          name="issue_date"
+          value={localWorksheet.issue_date || ""}
+          onChange={handleLocalChange}
+          onBlur={handleChange}
+          disabled={isViewMode}
+        />
+
+        <label className="form-label" htmlFor="award_date">Award Date:</label>
+        <input
+          className="form-input"
+          id="award_date"
+          type="date"
+          name="award_date"
+          value={localWorksheet.award_date || ""}
+          onChange={handleLocalChange}
+          onBlur={handleChange}
+          disabled={isViewMode}
+        />
+
+        <label className="form-label" htmlFor="service_provider_id">Service Provider ID:</label>
+        <input
+          className="form-input"
+          id="service_provider_id"
+          type="text"
+          name="service_provider_id"
+          value={localWorksheet.service_provider_id || ""}
+          onChange={handleLocalChange}
+          onBlur={handleChange}
+          disabled={isViewMode}
+        />
+
+        <label className="form-label" htmlFor="issuing_user_id">Issuing User ID:</label>
+        <input
+          className="form-input"
+          id="issuing_user_id"
+          type="text"
+          name="issuing_user_id"
+          value={localWorksheet.issuing_user_id || ""}
+          onChange={handleLocalChange}
+          onBlur={handleChange}
+          disabled={isViewMode}
+        />
+
+        <label className="form-label" htmlFor="posa_code">POSA Code:</label>
+        <input
+          className="form-input"
+          id="posa_code"
+          type="text"
+          name="posa_code"
+          value={localWorksheet.posa_code || ""}
+          onChange={handleLocalChange}
+          onBlur={handleChange}
+          disabled={isViewMode}
+        />
+        <label className="form-label" htmlFor="posa_description">POSA Description:</label>
+        <input
+          className="form-input"
+          id="posa_description"
+          type="text"
+          name="posa_description"
+          value={localWorksheet.posa_description || ""}
+          onChange={handleLocalChange}
+          onBlur={handleChange}
+          disabled={isViewMode}
+        />
+        <label className="form-label" htmlFor="posp_code">POSP Code:</label>
+        <input
+          className="form-input"
+          id="posp_code"
+          type="text"
+          name="posp_code"
+          value={localWorksheet.posp_code || ""}
+          onChange={handleLocalChange}
+          onBlur={handleChange}
+          disabled={isViewMode}
+        />
+        <label className="form-label" htmlFor="posp_description">POSP Description:</label>
+        <input
+          className="form-input"
+          id="posp_description"
+          type="text"
+          name="posp_description"
+          value={localWorksheet.posp_description || ""}
+          onChange={handleLocalChange}
+          onBlur={handleChange}
+          disabled={isViewMode}
+        />
+      </div>
+    </fieldset>
+  </>
+});
+
+const MemoizedAigpInput = React.memo(function AigpInput({ worksheet, setWorksheet, isViewMode }) {
+  // Local state for AIGP input
+  const [aigpInput, setAigpInput] = useState(Object.keys(worksheet.aigp || {}).join(', '));
+  useEffect(() => {
+    setAigpInput(Object.keys(worksheet.aigp || {}).join(', '));
+  }, [worksheet.aigp]);
+
+  const handleAigpInputChange = (event) => {
+    setAigpInput(event.target.value);
+  };
+
+  const handleAigpBlur = () => {
+    // Convert comma-separated string to array and create AIGP objects
+    const aigpArray = aigpInput.split(',').map(item => item.trim()).filter(item => item !== '');
+    setWorksheet((prevForm) => {
+      const newAigp = {};
+      aigpArray.forEach(aigp => {
+        if (aigp) {
+          // Check if any features are already using this AIGP
+          const existingCount = Object.values(prevForm.features || {}).filter(
+            feature => feature.properties?.aigp === aigp
+          ).length;
+          // Set count to existing usage or default to 0 for new AIGPs
+          newAigp[aigp] = existingCount > 0 ? existingCount : Number.MAX_SAFE_INTEGER; // Use a large number for new AIGPs
+        }
+      });
+      return {
+        ...prevForm,
+        aigp: newAigp
+      };
+    });
+  };
+  return <>
+    {/* AIGP Details */}
+    <fieldset className="form-section">
+      <legend>AIGP Details</legend>
+      <div className="form-grid">
+        <label className="form-label" htmlFor="aigp">AIGP (comma-separated):</label>
+        <input
+          className="form-input"
+          id="aigp"
+          type="text"
+          name="aigp"
+          value={aigpInput}
+          onChange={handleAigpInputChange}
+          onBlur={handleAigpBlur}
+          disabled={isViewMode}
+          placeholder="Enter AIGP values separated by commas"
+        />
+        <small style={{ fontSize: '12px', color: '#666', gridColumn: '1 / -1' }}>
+          Enter multiple AIGP values separated by commas (e.g., "AIGP001, AIGP002, AIGP003")
+        </small>
+      </div>
+    </fieldset>
+  </>
+});
+
+const MemoizedOperations = React.memo(function Operations({ operations, setWorksheet, isViewMode }) {
+  const [localOperations, setLocalOperations] = useState(operations);
+
+  const handleLocalOperationChange = (index, event) => {
+    const { name, value } = event.target;
+    setLocalOperations((prevOperations) => {
+      const updatedOperations = [...prevOperations];
+      updatedOperations[index] = {
+        ...updatedOperations[index],
+        [name]: value
+      };
+      return updatedOperations;
+    });
+  };
+
+  const handleOperationChange = (index, event) => {
+    const { name, value } = event.target;
+    setWorksheet((prevForm) => {
+      const operations = [...prevForm.operations];
+      operations[index] = {
+        ...operations[index],
+        [name]: value
+      };
+      return {
+        ...prevForm,
+        operations
+      };
+    });
+  };
+
+  const handleRemoveOperation = (index) => {
+    setWorksheet((prevForm) => ({
+      ...prevForm,
+      operations: prevForm.operations.filter((_, i) => i !== index)
+    }));
+  };
+  return <>
+    {/* Operations */}
+    <fieldset className="form-section">
+      <legend>Operations</legend>
+      {localOperations.map((operation, index) => (
+        <div key={index} className="operation">
+          <label className="form-label" htmlFor={`operation_code_${index}`}>Operation Code:</label>
+          <input
+            className="form-input"
+            id={`operation_code_${index}`}
+            type="text"
+            name="operation_code"
+            value={operation.operation_code || ""}
+            onChange={(e) => handleLocalOperationChange(index, e)}
+            onBlur={(e) => handleOperationChange(index, e)}
+            disabled={isViewMode}
+          />
+          <label className="form-label" htmlFor={`operation_description_${index}`}>Operation Description:</label>
+          <input
+            className="form-input"
+            id={`operation_description_${index}`}
+            type="text"
+            name="operation_description"
+            value={operation.operation_description || ""}
+            onChange={(e) => handleLocalOperationChange(index, e)}
+            onBlur={(e) => handleOperationChange(index, e)}
+            disabled={isViewMode}
+          />
+          <label className="form-label" htmlFor={`area_ha_${index}`}>Area (ha):</label>
+          <input
+            className="form-input"
+            id={`area_ha_${index}`}
+            type="number"
+            name="area_ha"
+            value={operation.area_ha || ""}
+            onChange={(e) => handleLocalOperationChange(index, e)}
+            onBlur={(e) => handleOperationChange(index, e)}
+            disabled={isViewMode}
+          />
+          {!isViewMode && localOperations.length > 1 && (
+            <button
+              className="btn btn-danger btn-small"
+              type="button"
+              onClick={() => handleRemoveOperation(index)}
+              disabled={isViewMode || localOperations.length === 1}
+              style={{ marginLeft: 10, marginTop: 10, marginBottom: 10 }}
+            >
+              Remove
+            </button>
+          )}
+        </div>
+      ))}
+      {!isViewMode && (
+        <button
+          className="btn btn-success"
+          type="button"
+          disabled={isViewMode}
+          onClick={() => {
+            if (localOperations.length >= 5) {
+              console.warn("Maximum of 5 operations allowed");
+              alert("Maximum of 5 operations allowed");
+              return;
+            }
+            setWorksheet((prevForm) => ({
+              ...prevForm,
+              operations: [...prevForm.operations, { operation_code: '', operation_description: '', area_ha: '' }]
+            }))
+            }
+          }>
+          Add Operation
+        </button>
+      )}
+    </fieldset>
+  </>
+});
+
+const MemoizedSelectedFeature = React.memo(function SelectedFeature({ worksheet, setWorksheet, selectedFeature, setSelectedFeature, isViewMode }) {
+  const [localSelectedFeature, setLocalSelectedFeature] = useState(worksheet.features[selectedFeature] || null);
+
+  useEffect(() => {
+    setLocalSelectedFeature(worksheet.features[selectedFeature] || null);
+  }, [selectedFeature, worksheet.features]);
+
+  const handleLocalSelectedFeatureChange = (event) => {
+    const { name, value } = event.target;
+
+    setLocalSelectedFeature((prev) => ({
+      ...prev,
+      properties: {
+        ...prev.properties,
+        [name]: value
+      }
+    }));
+  };
+
+  const handleSelectedFeatureChange = (event) => {
+    const { name, value } = event.target;
+
+    setWorksheet((prevForm) => {
+      const updatedFeatures = {
+        ...prevForm.features,
+        [selectedFeature]: {
+          ...prevForm.features[selectedFeature],
+          properties: {
+            ...prevForm.features[selectedFeature].properties,
+            [name]: value
+          }
+        }
+      };
+
+      let updatedAigp = { ...(prevForm.aigp || {}) };
+      if (name === 'aigp') {
+        const prevAigpValue = prevForm.features[selectedFeature]?.properties?.aigp;
+
+        // Decrement count for previous AIGP if changed
+        if (prevAigpValue && prevAigpValue !== value && updatedAigp[prevAigpValue]) {
+          updatedAigp[prevAigpValue]--;
+          if (updatedAigp[prevAigpValue] <= 0) delete updatedAigp[prevAigpValue];
+        }
+        // Increment or set count for new AIGP
+        if (value) {
+          updatedAigp[value] = (updatedAigp[value] || 0) + 1;
+        }
+      }
+
+      return {
+        ...prevForm,
+        features: updatedFeatures,
+        aigp: updatedAigp
+      };
+    });
+    
+  };
+  return <>
+    {/* Selected Feature Details */}
+    {localSelectedFeature && (
+      <fieldset className="form-section">
+        <legend>Selected Feature Details</legend>
+        <div className="form-grid">
+          <label className="form-label" htmlFor="feature_aigp">AIGP:</label>
+          <input
+            className="form-input"
+            id="feature_aigp"
+            type="text"
+            name="aigp"
+            value={localSelectedFeature.properties?.aigp || ""}
+            onChange={handleLocalSelectedFeatureChange}
+            onBlur={handleSelectedFeatureChange}
+            disabled={isViewMode}
+            readOnly={isViewMode}
+          />
+
+          <label className="form-label" htmlFor="feature_ui_id">UI ID (LandIT Worker):</label>
+          <input
+            className="form-input"
+            id="feature_ui_id"
+            type="text"
+            name="UI_id"
+            value={localSelectedFeature.properties?.UI_id || ""}
+            onChange={handleLocalSelectedFeatureChange}
+            onBlur={handleSelectedFeatureChange}
+            disabled={isViewMode}
+            readOnly={isViewMode}
+          />
+
+          <label className="form-label" htmlFor="feature_polygon_id">Polygon ID:</label>
+          <input
+            className="form-input"
+            id="feature_polygon_id"
+            type="text"
+            name="polygon_id"
+            value={localSelectedFeature.properties?.polygon_id || ""}
+            onChange={handleLocalSelectedFeatureChange}
+            onBlur={handleSelectedFeatureChange}
+            disabled={isViewMode}
+            readOnly={isViewMode}
+          />
+
+          <label className="form-label" htmlFor="feature_rural_property_id">Rural Property ID:</label>
+          <input
+            className="form-input"
+            id="feature_rural_property_id"
+            type="text"
+            name="rural_property_id"
+            value={localSelectedFeature.properties?.rural_property_id || ""}
+            onChange={handleLocalSelectedFeatureChange}
+            onBlur={handleSelectedFeatureChange}
+            disabled={isViewMode}
+            readOnly={isViewMode}
+          />
+
+          <label className="form-label" htmlFor="feature_geometry_type">Geometry Type:</label>
+          <input
+            className="form-input"
+            id="feature_geometry_type"
+            type="text"
+            value={localSelectedFeature.geometry?.type || ""}
+            disabled
+            readOnly
+          />
+        </div>
+
+        <div style={{ marginTop: '10px', textAlign: 'center' }}>
+          <button
+            type="button"
+            onClick={() => setSelectedFeature(null)}
+            className="btn btn-secondary"
+            style={{ fontSize: '12px', padding: '5px 15px' }}
+          >
+            Clear Selection
+          </button>
+          <>
+          {!isViewMode && (
+            <button
+              type="button"
+              className="btn btn-danger"
+              style={{ fontSize: '12px', padding: '5px 15px', marginLeft: '10px' }}
+              onClick={() => {
+                // Remove the selected feature from the worksheet
+                setWorksheet(prevForm => {
+                  const newFeatures = { ...prevForm.features };
+                  const removedFeature = newFeatures[selectedFeature];
+                  delete newFeatures[selectedFeature];
+
+                  // If the removed feature had an AIGP, decrement its count
+                  let updatedAigp = { ...prevForm.aigp };
+                  const aigpKey = removedFeature.properties?.aigp;
+                  if (aigpKey && updatedAigp[aigpKey]) {
+                    updatedAigp[aigpKey]--;
+                    if (updatedAigp[aigpKey] <= 0) {
+                      // Remove the key with a new object reference
+                      const { [aigpKey]: _, ...rest } = updatedAigp;
+                      updatedAigp = rest;
+                    }
+                  }
+
+                  setTimeout(() => {const featureKeys = Object.keys(newFeatures);
+                    // If no features left, clear selected feature
+                    if (featureKeys.length === 0) {
+                      setSelectedFeature(null);
+                    } else {
+                      setSelectedFeature(featureKeys[0] || null);
+                  }}, 0);
+                  return { ...prevForm, aigp: updatedAigp, features: newFeatures };
+                });
+                
+              }}
+            >
+              Remove Feature
+            </button>
+          )}
+          </>
+        </div>
+      </fieldset>
+    )}
+  </>
+});
+
 
 export default function WorkSheet({ mode }) {
   const { id } = useParams();
@@ -829,31 +1039,58 @@ export default function WorkSheet({ mode }) {
     posp_description: '',
     operations: [],
     aigp: {},
-    polygon: [],
     features: {}
   });
   const [initialForm, setInitialForm] = useState(null);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const [loadingWS, setLoadingWS] = useState(mode === 'edit');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (mode === 'edit') {
+      let isMounted = true; // Track component mount status
       fetchWorkSheet(id, navigate)
-        .then(data => {
-          if (!data) throw new Error("No data found for the given ID");
-          console.log("Raw fetched worksheet data:", data);
-          const normalizedData = normalizeWorksheet(data);
-          console.log("Normalized worksheet data:", normalizedData);
-          setForm(normalizedData);
-          setInitialForm(data);
-        })
-        .catch(err => {
-          console.error("Error fetching worksheet:", err);
-          setError("Failed to load worksheet data. Please try again later.");
-        });
-    }
-  }, [navigate, id, mode]);
+      .then(async data => {
+        if (!data) {
+          throw new Error("No data found for the given ID");
+        }
+        /*const detectedCRS = detectCRSFromGeoJSON(data);
+        let normalizedData;
+        if (detectedCRS && detectedCRS.code !== 'EPSG:4326') {
+          normalizedData = await convertGeoJSONToWorksheetWithCRS(data, detectedCRS);
+        } else {
+          normalizedData = convertGeoJSONToWorksheet(data);
+        }*/
+        const normalizedData = normalizeWorksheet(data);
+        normalizedData.id = id;
+        setForm(normalizedData);
+        setInitialForm(normalizedData);
+      })
+      .catch(err => {
+        console.error("Error fetching worksheet:", err);
+        setError("Failed to load worksheet data. Please try again later.");
+      })
+      .finally(() => {
+        if (isMounted) {
+          setLoadingWS(false)
+        }
+      });
+    return () => { isMounted = false; }; // Cleanup function to avoid state updates on unmounted component
+  }}, [mode, navigate, id]);
+
+
+  if (loadingWS) {
+    return (
+      <>
+        {topBar(navigate)}
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Loading WorkSheet...</p>
+        </div>
+      </>
+    );
+  }
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -874,12 +1111,11 @@ export default function WorkSheet({ mode }) {
         },
         body: JSON.stringify(formDataForBackend)
       });
+      const data = await response.json();
       if (response.ok) {
-        const data = await response.json();
-        console.log(`WorkSheet ${mode === 'create' ? "created" : "edited"} successfully:`, data);
         navigate('/'); // Redirect to the worksheets list or detail page
       } else {
-        const errorData = await response.json();
+        const errorData = data;
         setError(errorData.message || "Failed to create worksheet. Please try again later.");
         if (mode === 'edit') {
           setForm(initialForm); // Reset to initial form if edit fails
@@ -958,21 +1194,50 @@ export function ViewWorkSheet() {
   });
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let isMounted = true; // Track component mount status
     fetchWorkSheet(id, navigate)
-      .then(data => {
+      .then(async data => {
         if (!data) {
           throw new Error("No data found for the given ID");
         }
-        setForm(normalizeWorksheet(data));
-        console.log("Normalized worksheet:", normalizeWorksheet(data));
+        // For future use, receiving as geojson
+        /*const detectedCRS = detectCRSFromGeoJSON(data);
+        let normalizedData;
+        if (detectedCRS && detectedCRS.code !== 'EPSG:4326') {
+          normalizedData = await convertGeoJSONToWorksheetWithCRS(data, detectedCRS);
+        } else {
+          normalizedData = convertGeoJSONToWorksheet(data);
+        }*/
+        const normalizedData = normalizeWorksheet(data);
+        normalizedData.id = id;
+        setForm(normalizedData);
       })
       .catch(err => {
         console.error("Error fetching worksheet:", err);
         setError("Failed to load worksheet data. Please try again later.");
+      })
+      .finally(() => {
+        if (isMounted) {
+          setLoading(false)
+        }
       });
+    return () => { isMounted = false; }; // Cleanup function to avoid state updates on unmounted component
   }, [navigate, id]);
+
+  if (loading) {
+    return (
+      <>
+        {topBar(navigate)}
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Loading WorkSheet...</p>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -1011,6 +1276,26 @@ export function ViewWorkSheet() {
               isViewMode={true}
             />
             {error && <div className="form-error">{error}</div>}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
+              <button
+                className="btn btn-danger"
+                type="button"
+                onClick={() => {
+                  <DeleteWorkSheet
+                    id={id}
+                  />
+                }}
+              >
+                Delete WorkSheet
+              </button>
+              <button
+                type="button"
+                className="btn btn-success"
+                onClick={() => navigate(`/executionsheet/${id}`)}
+              >
+                View Execution Sheet
+              </button>
+            </div>
           </form>
         </div>
       </div>
@@ -1037,6 +1322,8 @@ async function worksheetToGeoJSON(worksheet, crsCode = 'EPSG:4326') {
     })
   );
 
+  const aigp = Object.keys(worksheet.aigp || {});
+
   return {
     type: 'FeatureCollection',
     name: worksheet.title,
@@ -1055,7 +1342,7 @@ async function worksheetToGeoJSON(worksheet, crsCode = 'EPSG:4326') {
       service_provider_id: worksheet.service_provider_id,
       award_date: worksheet.award_date,
       issuing_user_id: worksheet.issuing_user_id,
-      aigp: worksheet.aigp,
+      aigp: aigp,
       posa_code: worksheet.posa_code,
       posa_description: worksheet.posa_description,
       posp_code: worksheet.posp_code,
@@ -1085,7 +1372,21 @@ export function ListWorkSheets() {
         CheckRequests(request, navigate);
 
         const data = await request.json();
-        if (isMounted) setWorksheets(data.map(normalizeWorksheet));
+        const normalizedWorksheets = data.map(worksheet => {
+          // For future use, receiving as geojson
+          /*const detectedCRS = detectCRSFromGeoJSON(worksheet);
+          let normalizedData;
+          if (detectedCRS && detectedCRS.code !== 'EPSG:4326') {
+            normalizedData = convertGeoJSONToWorksheetWithCRS(worksheet, detectedCRS);
+          } else {
+            normalizedData = convertGeoJSONToWorksheet(worksheet);
+          }*/
+
+          const normalizedData = normalizeWorksheet(worksheet);
+          normalizedData.id = worksheet.id; // Ensure ID is included
+          return normalizedData;
+        });
+        setWorksheets(normalizedWorksheets);
       } catch (err) {
         if (isMounted) setError('Error fetching users. Please try again later.');
         console.error(err);
@@ -1152,29 +1453,47 @@ export function ListWorkSheets() {
 // Helper function to normalize AIGP data from various formats
 // Helper function to normalize AIGP data from various formats
 function normalizeAigpData(aigpData) {
-  // If it's already an object (count map), return as is
+  // If it's already an object (count map), check for stringified array keys
   if (aigpData && typeof aigpData === 'object' && !Array.isArray(aigpData)) {
+    const keys = Object.keys(aigpData);
+    if (keys.length === 1 && keys[0].startsWith('["') && keys[0].endsWith('"]')) {
+      try {
+        const arr = JSON.parse(keys[0]);
+        if (Array.isArray(arr)) {
+          const map = {};
+          arr.forEach(aigp => { if (aigp) map[aigp] = aigpData[keys[0]]; });
+          return map;
+        }
+      } catch (e) {}
+    }
     return aigpData;
+  }
+
+  // If it's a stringified array, parse it
+  if (typeof aigpData === 'string') {
+    let parsed;
+    try {
+      parsed = JSON.parse(aigpData);
+      if (Array.isArray(parsed)) {
+        const map = {};
+        parsed.forEach(aigp => { if (aigp) map[aigp] = 1; });
+        return map;
+      }
+    } catch (e) {
+      // Not a JSON array, treat as comma-separated
+      if (aigpData.trim() === '') return {};
+      const map = {};
+      aigpData.split(',').map(item => item.trim()).filter(item => item !== '').forEach(aigp => {
+        map[aigp] = 1;
+      });
+      return map;
+    }
   }
 
   // If it's already an array, convert to count map
   if (Array.isArray(aigpData)) {
     const map = {};
-    aigpData.forEach(aigp => {
-      if (aigp) map[aigp] = 1;
-    });
-    return map;
-  }
-
-  // If it's a string, split by comma and clean up
-  if (typeof aigpData === 'string') {
-    if (aigpData.trim() === '') {
-      return {};
-    }
-    const map = {};
-    aigpData.split(',').map(item => item.trim()).filter(item => item !== '').forEach(aigp => {
-      map[aigp] = 1;
-    });
+    aigpData.forEach(aigp => { if (aigp) map[aigp] = 1; });
     return map;
   }
 
@@ -1184,7 +1503,17 @@ function normalizeAigpData(aigpData) {
 
 // Simple normalization function for backward compatibility with existing data
 function normalizeWorksheet(data) {
-  // Ensure the basic structure is present and normalize data types
+  let featuresArray = [];
+  if (Array.isArray(data.features)) {
+    featuresArray = data.features;
+  } else if (typeof data.features === "string" && data.features.trim() !== "") {
+    try {
+      featuresArray = JSON.parse(data.features);
+    } catch (e) {
+      console.error("Failed to parse features JSON:", e, data.features);
+      featuresArray = [];
+    }
+  }
   return {
     ...data,
     id: data.id || '', // Ensure ID is included
@@ -1203,7 +1532,13 @@ function normalizeWorksheet(data) {
     aigp: normalizeAigpData(data.aigp),
     operations: Array.isArray(data.operations) ? data.operations : (typeof data.operations === "string" ? JSON.parse(data.operations) : []),
     polygon: data.polygon || [],
-    features: data.features || [] // Ensure features array exists
+    features: Object.fromEntries(
+      featuresArray.map((feature, idx) => {
+        // Ensure each feature has a unique key
+        const key = feature.properties?.polygon_id || feature.properties?.id || `${Date.now()}_${idx}`;;
+        return [key, {...feature, key}];
+      })
+    )
   };
 }
 
@@ -1319,12 +1654,6 @@ const convertGeoJSONToWorksheet = (geoJsonData) => {
   // Merge all possible metadata sources
   const allMetadata = { ...firstFeatureMetadata, ...metadata };
 
-  console.log("Converting GeoJSON to worksheet:", {
-    originalData: geoJsonData,
-    extractedMetadata: allMetadata,
-    features: geoJsonData.features
-  });
-
   const result = {
     id: allMetadata.id || '', // Include ID from metadata
     title: allMetadata.title || geoJsonData.name || '',
@@ -1361,45 +1690,8 @@ const convertGeoJSONToWorksheet = (geoJsonData) => {
     }
   });
 
-  console.log("Converted worksheet result:", result);
   return result;
 };
-
-/**
-const getPolygonCenter = (polygon) => {
-  if (!polygon || polygon.length === 0) return { lat: 38.659784, lng: -9.202765 };
-
-  // Check if this is multiple polygons (array of arrays) or single polygon (array of coordinates)
-  if (Array.isArray(polygon[0])) {
-    // Multiple polygons - calculate center from all polygons
-    let totalLat = 0;
-    let totalLng = 0;
-    let totalPoints = 0;
-
-    polygon.forEach(polygonPath => {
-      if (Array.isArray(polygonPath)) {
-        polygonPath.forEach(point => {
-          if (point && point.lat && point.lng) {
-            totalLat += point.lat;
-            totalLng += point.lng;
-            totalPoints++;
-          }
-        });
-      }
-    });
-
-    if (totalPoints > 0) {
-      return { lat: totalLat / totalPoints, lng: totalLng / totalPoints };
-    }
-    return { lat: 38.659784, lng: -9.202765 };
-  } else {
-    // Single polygon - original logic
-    const lat = polygon.reduce((sum, p) => sum + p.lat, 0) / polygon.length;
-    const lng = polygon.reduce((sum, p) => sum + p.lng, 0) / polygon.length;
-    return { lat, lng };
-  }
-};
- */
 
 export function UploadWorkSheet() {
   const [file, setFile] = useState(null);
@@ -1488,20 +1780,39 @@ export function UploadWorkSheet() {
     const formData = new FormData();
     formData.append('file', file);
 
+    const aigp = Object.keys(worksheetData.aigp) || []
+    const features = Object.values((worksheetData.features) || []).map(({key, ...rest}) => rest);
+
     try {
       const response = await fetch("/rest/worksheet/create", {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: formData
+        body: JSON.stringify({
+          id: worksheetData.id || '',
+          status: worksheetData.status || '',
+          starting_date: worksheetData.starting_date || '',
+          finishing_date: worksheetData.finishing_date || '',
+          issue_date: worksheetData.issue_date || '',
+          award_date: worksheetData.award_date || '',
+          service_provider_id: worksheetData.service_provider_id || '',
+          issuing_user_id: worksheetData.issuing_user_id || '',
+          posa_code: worksheetData.posa_code || '',
+          posa_description: worksheetData.posa_description || '',
+          posp_code: worksheetData.posp_code || '',
+          posp_description: worksheetData.posp_description || '',
+          aigp: aigp,
+          operations: worksheetData.operations || [],
+          features: features,
+          crs: { type: 'name', properties: { name: 'urn:ogc:def:crs:EPSG:4326' } } // Assuming WGS84 for upload
+        })
       });
+      const data = await response.json();
       if (response.ok) {
-        const data = await response.json();
-        console.log("Worksheet uploaded successfully:", data);
         navigate('/'); // Redirect to the worksheets list or detail page
       } else {
-        const errorData = await response.json();
+        const errorData = data;
         setError(errorData.message || "Failed to upload worksheet. Please try again later.");
         setLoading(false);
       }
@@ -1572,7 +1883,6 @@ export function UploadWorkSheet() {
                 </div>
               </div>
 
-              {error && <div className="form-error">{error}</div>}
               {warning && <div className="form-warning" style={{
                 color: '#856404',
                 backgroundColor: '#fff3cd',
@@ -1606,12 +1916,12 @@ export function UploadWorkSheet() {
                   <h2 className="worksheet-header" style={{ margin: '0 0 5px 0' }}>
                     Preview Uploaded WorkSheet
                   </h2>
-                  <p style={{ margin: '0', fontSize: '14px', color: '#0c5460' }}>
+                  <p style={{ margin: '0', fontSize: '14px', color: '#0c5460', wordBreak: 'break-word' }}>
                     Detected format: <strong>{detectedFormat}</strong><br />
                     Review the worksheet data below, then confirm upload to save it to the server.
                   </p>
                 </div>
-                <div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', minWidth: '220px', alignItems: 'stretch' }}>
                   <button
                     type="button"
                     onClick={handleCancelPreview}
@@ -1638,6 +1948,7 @@ export function UploadWorkSheet() {
                   </button>
                 </div>
               </div>
+              {error && <div className="form-error">{error}</div>}
 
               {worksheetData && (
                 <WorksheetDisplay
@@ -1858,7 +2169,6 @@ async function convertCoordinates(x, y, sourceCRS, targetCRS = 'EPSG:4326') {
     if (sourceCRS === 'EPSG:3763' && targetCRS === 'EPSG:4326') {
       const latlng = proj4('EPSG:3763', 'EPSG:4326', [x, y]);
 
-      console.log(`Converted ${x}, ${y} (EPSG:3763) to ${latlng[0]}, ${latlng[1]} (WGS84) using approximation`);
       return latlng;
     }
     await ensureProj4Definition(sourceCRS); // Ensure proj4 definition is loaded

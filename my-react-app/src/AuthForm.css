@@ -84,3 +84,9 @@
   0% { transform: rotate(0deg);}
   100% { transform: rotate(360deg);}
 }
+
+.success {
+  color: green;
+  margin-top: 1rem;
+  text-align: center;
+}

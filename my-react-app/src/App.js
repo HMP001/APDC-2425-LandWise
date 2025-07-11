@@ -4,6 +4,7 @@ import Register from './Register';
 import List from './List';
 import { Attributes, ChangePassword, ChangeRole, ChangeState } from './Attributes';
 import WorkSheet, { ViewWorkSheet, ListWorkSheets, UploadWorkSheet } from './WorkSheet';
+import { ViewExecutionSheet } from './ExecutionSheet';
 import { Route, Routes } from 'react-router-dom';
 import Home from './Home';
 import { useNavigate } from 'react-router-dom';
@@ -39,6 +40,7 @@ function App() {
           <Route path="/worksheet/view/:id" element={<ViewWorkSheet />} />
           <Route path="/worksheet/list" element={<ListWorkSheets />} />
           <Route path="/worksheet/upload" element={<UploadWorkSheet />} />
+          <Route path="/executionsheet/:id" element={<ViewExecutionSheet />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </LoadScript>
