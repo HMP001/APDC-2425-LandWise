@@ -22,8 +22,7 @@ public class WorkSheetData {
     public String posp_description;
 
     public List<Operation> operations;
-    public TokenAuth token;
-
+    
     public static class Operation {
         public String operation_code;
         public String operation_description;
