@@ -31,6 +31,7 @@ import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.CookieParam;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -55,19 +56,35 @@ public class WorkSheetResource {
 
     private record AuthInfo(String username, String role) {}
 
-    private AuthInfo validateJWTFromCookie(Cookie cookie) {
-        if (cookie == null || !JWTToken.validateJWT(cookie.getValue()))
-            throw new WebApplicationException(Response.status(Response.Status.UNAUTHORIZED).entity("{\"message\":\"Invalid or expired session.\"}").build());
-        DecodedJWT jwt = JWTToken.extractJWT(cookie.getValue());
-        return new AuthInfo(jwt.getSubject(), jwt.getClaim("role").asString());
+    private String extractJWT(Cookie cookie, String authHeader) {
+        if (cookie != null && cookie.getValue() != null)
+            return cookie.getValue();
+    
+        if (authHeader != null && authHeader.startsWith("Bearer "))
+            return authHeader.substring("Bearer ".length());
+    
+        return null;
     }
 
     @POST
     @Path("/create")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response createWorksheet(@CookieParam("session::apdc") Cookie cookie, WorkSheetData data) {
-        AuthInfo auth = validateJWTFromCookie(cookie);
-        if (!Roles.SMBO.equalsIgnoreCase(auth.role()))
+    public Response createWorksheet(@CookieParam("session::apdc") Cookie cookie, @HeaderParam("Authorization") String authHeader, WorkSheetData data) {
+        String token = extractJWT(cookie, authHeader);
+        if (token == null || !JWTToken.validateJWT(token)) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Invalid or expired session.\"}").build();
+        }
+        
+        DecodedJWT jwt = JWTToken.extractJWT(token);
+        if (jwt == null) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Failed to decode token.\"}").build();
+        }
+    
+        String requesterUsername = jwt.getSubject();
+        String requesterRole = jwt.getClaim("role").asString();
+        if (!Roles.SMBO.equalsIgnoreCase(requesterRole))
             return forbidden("Only SMBO can create worksheets.");
         if (!data.valid())
             return Response.status(Response.Status.BAD_REQUEST).entity("{\"message\":\"Missing required fields.\"}").build();
@@ -90,7 +107,7 @@ public class WorkSheetResource {
                 .set("aigp", g.toJson(data.aigp))
                 .set("operations", g.toJson(data.operations))
                 .set("features", StringValue.newBuilder(g.toJson(data.features)).setExcludeFromIndexes(true).build())
-                .set("created_by", auth.username())
+                .set("created_by", requesterUsername)
                 .set("created_at", System.currentTimeMillis())
                 .build();
 
@@ -110,11 +127,23 @@ public class WorkSheetResource {
     public Response uploadWorksheetFile(
             @FormDataParam("file") InputStream uploadedInputStream,
             @FormDataParam("file") FormDataContentDisposition fileDetail,
-            @CookieParam("session::apdc") Cookie cookie) {
-
+            @CookieParam("session::apdc") Cookie cookie, @HeaderParam("Authorization") String authHeader) {
+    		
+    		String token = extractJWT(cookie, authHeader);
+    		if (token == null || !JWTToken.validateJWT(token)) {
+                return Response.status(Response.Status.UNAUTHORIZED)
+                        .entity("{\"message\":\"Invalid or expired session.\"}").build();
+            }
+    		
             try {
-               AuthInfo auth = validateJWTFromCookie(cookie);
-                if (!Roles.SMBO.equalsIgnoreCase(auth.role())) return forbidden("Only SMBO can upload worksheets.");
+            	
+            	DecodedJWT jwt = JWTToken.extractJWT(token);
+            	if (jwt == null) {
+                   return Response.status(Response.Status.UNAUTHORIZED)
+                           .entity("{\"message\":\"Failed to decode token.\"}").build();
+            	}
+            	String requesterRole = jwt.getClaim("role").asString();
+                if (!Roles.SMBO.equalsIgnoreCase(requesterRole)) return forbidden("Only SMBO can upload worksheets.");
     
                 String content = new String(uploadedInputStream.readAllBytes());
                 JsonObject root = JsonParser.parseString(content).getAsJsonObject();
@@ -128,17 +157,29 @@ public class WorkSheetResource {
                 data.features = Arrays.asList(g.fromJson(root.get("features"), WorkSheetData.Feature[].class));
                 data.title = root.has("name") ? root.get("name").getAsString() : null;
 
-                return createWorksheet(cookie, data);
+                return createWorksheet(cookie, authHeader, data);
 
         } catch (Exception e) {
             LOG.severe("Failed to upload worksheet file: " + e.getMessage());
             return internalError("Upload failed.");
         }
     }
+    
     @GET
     @Path("/view/{id}")
-    public Response viewWorksheet(@PathParam("id") String id, @CookieParam("session::apdc") Cookie cookie) {
-        AuthInfo auth = validateJWTFromCookie(cookie);
+    public Response viewWorksheet(@PathParam("id") String id, @CookieParam("session::apdc") Cookie cookie, @HeaderParam("Authorization") String authHeader) {
+    	String token = extractJWT(cookie, authHeader);
+    	if (token == null || !JWTToken.validateJWT(token)) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Invalid or expired session.\"}").build();
+        }
+    	
+    	DecodedJWT jwt = JWTToken.extractJWT(token);
+    	if (jwt == null) {
+           return Response.status(Response.Status.UNAUTHORIZED)
+                   .entity("{\"message\":\"Failed to decode token.\"}").build();
+    	}
+    	String requesterRole = jwt.getClaim("role").asString();
 
         Key key = datastore.newKeyFactory().setKind("WorkSheet").newKey(id);
         Entity entity = datastore.get(key);
@@ -146,7 +187,7 @@ public class WorkSheetResource {
         if (entity == null)
             return Response.status(Response.Status.NOT_FOUND).entity("{\"error\":\"Not found\"}").build();
 
-        boolean isSGVBO = Roles.SGVBO.equalsIgnoreCase(auth.role());
+        boolean isSGVBO = Roles.SGVBO.equalsIgnoreCase(requesterRole);
 
         Map<String, Object> data = new HashMap<>();
         for (String name : entity.getNames()) {
@@ -160,11 +201,22 @@ public class WorkSheetResource {
     @POST
     @Path("/list")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response listWorksheets(FilterRequest filter, @CookieParam("session::apdc") Cookie cookie) {
-        AuthInfo auth = validateJWTFromCookie(cookie);
-
+    public Response listWorksheets(FilterRequest filter, @CookieParam("session::apdc") Cookie cookie, @HeaderParam("Authorization") String authHeader) {
+    	String token = extractJWT(cookie, authHeader);
+    	if (token == null || !JWTToken.validateJWT(token)) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Invalid or expired session.\"}").build();
+        }
+    	
+    	DecodedJWT jwt = JWTToken.extractJWT(token);
+    	if (jwt == null) {
+           return Response.status(Response.Status.UNAUTHORIZED)
+                   .entity("{\"message\":\"Failed to decode token.\"}").build();
+    	}
+    	String requesterRole = jwt.getClaim("role").asString();
+    	
         Set<String> allowed = Set.of("smbo", "backoffice", "admin", Roles.SGVBO, Roles.SDVBO, Roles.SYSADMIN, Roles.SYSBO);
-        if (!allowed.contains(auth.role().toLowerCase())) return forbidden("Not allowed to list worksheets.");
+        if (!allowed.contains(requesterRole.toLowerCase())) return forbidden("Not allowed to list worksheets.");
 
         EntityQuery.Builder builder = Query.newEntityQueryBuilder().setKind("WorkSheet");
         if (filter.status != null && !filter.status.isEmpty())
@@ -191,16 +243,28 @@ public class WorkSheetResource {
     @POST
     @Path("/updateStatus")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response updateStatus(WorkSheetData data, @CookieParam("session::apdc") Cookie cookie) {
-        AuthInfo auth = validateJWTFromCookie(cookie);
-        if (!Roles.PRBO.equalsIgnoreCase(auth.role()))
+    public Response updateStatus(WorkSheetData data, @CookieParam("session::apdc") Cookie cookie, @HeaderParam("Authorization") String authHeader) {
+    	String token = extractJWT(cookie, authHeader);
+    	if (token == null || !JWTToken.validateJWT(token)) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Invalid or expired session.\"}").build();
+        }
+    	
+    	DecodedJWT jwt = JWTToken.extractJWT(token);
+    	if (jwt == null) {
+           return Response.status(Response.Status.UNAUTHORIZED)
+                   .entity("{\"message\":\"Failed to decode token.\"}").build();
+    	}
+    	String requesterUsername = jwt.getSubject();
+    	String requesterRole = jwt.getClaim("role").asString();
+        if (!Roles.PRBO.equalsIgnoreCase(requesterRole))
             return forbidden("Only PRBO can update status.");
 
         Key key = datastore.newKeyFactory().setKind("WorkSheet").newKey(data.id);
         Entity ws = datastore.get(key);
         if (ws == null) return Response.status(Response.Status.NOT_FOUND).build();
 
-        if (!ws.getString("service_provider_id").equals(auth.username()))
+        if (!ws.getString("service_provider_id").equals(requesterUsername))
             return forbidden("User not authorized for this worksheet.");
 
         Entity updated = Entity.newBuilder(ws).set("status", data.status).build();
@@ -211,10 +275,20 @@ public class WorkSheetResource {
 
     @DELETE
     @Path("/delete/{id}")
-    public Response deleteWorksheet(@PathParam("id") String id, @CookieParam("session::apdc") Cookie cookie) {
-        AuthInfo auth = validateJWTFromCookie(cookie);
-
-        if (!Set.of(Roles.SYSADMIN, Roles.SMBO).contains(auth.role()))
+    public Response deleteWorksheet(@PathParam("id") String id, @CookieParam("session::apdc") Cookie cookie, @HeaderParam("Authorization") String authHeader) {
+    	String token = extractJWT(cookie, authHeader);
+    	if (token == null || !JWTToken.validateJWT(token)) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Invalid or expired session.\"}").build();
+        }
+    	
+    	DecodedJWT jwt = JWTToken.extractJWT(token);
+    	if (jwt == null) {
+           return Response.status(Response.Status.UNAUTHORIZED)
+                   .entity("{\"message\":\"Failed to decode token.\"}").build();
+    	}
+    	String requesterRole = jwt.getClaim("role").asString();
+        if (!Set.of(Roles.SYSADMIN, Roles.SMBO).contains(requesterRole))
             return forbidden("Only SMBO or SYSADMIN can delete worksheets.");
 
         Key key = datastore.newKeyFactory().setKind("WorkSheet").newKey(id);
@@ -227,8 +301,12 @@ public class WorkSheetResource {
 
     @GET
     @Path("/mapdata")
-    public Response getMapData(@CookieParam("session::apdc") Cookie cookie) {
-        validateJWTFromCookie(cookie);
+    public Response getMapData(@CookieParam("session::apdc") Cookie cookie, @HeaderParam("Authorization") String authHeader) {
+    	String token = extractJWT(cookie, authHeader);
+    	if (token == null || !JWTToken.validateJWT(token)) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Invalid or expired session.\"}").build();
+        }
 
         Query<Entity> query = Query.newEntityQueryBuilder().setKind("WorkSheet").build();
         QueryResults<Entity> results = datastore.run(query);
@@ -249,8 +327,12 @@ public class WorkSheetResource {
 
     @GET
     @Path("/stats")
-    public Response getStatistics(@CookieParam("session::apdc") Cookie cookie) {
-        validateJWTFromCookie(cookie);
+    public Response getStatistics(@CookieParam("session::apdc") Cookie cookie, @HeaderParam("Authorization") String authHeader) {
+    	String token = extractJWT(cookie, authHeader);
+    	if (token == null || !JWTToken.validateJWT(token)) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Invalid or expired session.\"}").build();
+        }
 
         Map<String, Integer> stats = new HashMap<>();
         Query<Entity> query = Query.newEntityQueryBuilder().setKind("WorkSheet").build();
@@ -269,8 +351,12 @@ public class WorkSheetResource {
     @GET
     @Path("/export")
     @Produces("text/csv")
-    public Response exportWorksheets(@CookieParam("session::apdc") Cookie cookie) {
-        validateJWTFromCookie(cookie);
+    public Response exportWorksheets(@CookieParam("session::apdc") Cookie cookie, @HeaderParam("Authorization") String authHeader) {
+    	String token = extractJWT(cookie, authHeader);
+    	if (token == null || !JWTToken.validateJWT(token)) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Invalid or expired session.\"}").build();
+        }
 
         Query<Entity> query = Query.newEntityQueryBuilder().setKind("WorkSheet").build();
         QueryResults<Entity> results = datastore.run(query);
