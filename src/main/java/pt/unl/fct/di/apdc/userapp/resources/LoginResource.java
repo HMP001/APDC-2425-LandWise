@@ -1,150 +1,142 @@
 package pt.unl.fct.di.apdc.userapp.resources;
 
-
+import java.util.HashMap;
+import java.util.Map;
 import java.util.logging.Logger;
 
-import org.apache.commons.codec.digest.DigestUtils;
-
-import com.google.cloud.Timestamp;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.google.cloud.datastore.Datastore;
 import com.google.cloud.datastore.DatastoreOptions;
 import com.google.cloud.datastore.Entity;
 import com.google.cloud.datastore.Key;
 import com.google.cloud.datastore.KeyFactory;
-import com.google.cloud.datastore.PathElement;
-import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Cookie;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.NewCookie;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.Response.Status;
+import pt.unl.fct.di.apdc.userapp.util.JWTConfig;
+import pt.unl.fct.di.apdc.userapp.util.JWTToken;
 import pt.unl.fct.di.apdc.userapp.util.LoginData;
-import pt.unl.fct.di.apdc.userapp.util.TokenAuth;
+import pt.unl.fct.di.apdc.userapp.util.Roles;
 
 @Path("/login")
 @Produces(MediaType.APPLICATION_JSON + ";charset=utf-8")
 public class LoginResource {
 
-	private static final String MESSAGE_INVALID_CREDENTIALS = "Incorrect username or password.";
+    private static final Logger LOG = Logger.getLogger(LoginResource.class.getName());
 
-	private static final String LOG_MESSAGE_LOGIN_ATTEMP = "Login attempt by user: ";
-	private static final String LOG_MESSAGE_LOGIN_SUCCESSFUL = "Login successful by user: ";
-	private static final String LOG_MESSAGE_WRONG_PASSWORD = "Wrong password for: ";
-	private static final String LOG_MESSAGE_UNKNOW_USER = "Failed login attempt for username: ";
+    private static final Datastore datastore = DatastoreOptions.getDefaultInstance().getService();
+    private static final KeyFactory userKeyFactory = datastore.newKeyFactory().setKind("User");
 
-	private static final Logger LOG = Logger.getLogger(LoginResource.class.getName());
-	private static final Datastore datastore = DatastoreOptions.getDefaultInstance().getService();
-	private static final KeyFactory userKeyFactory = datastore.newKeyFactory().setKind("User");
+    @POST
+    @Path("/account")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response doLogin(LoginData data) {
+        LOG.fine("Login attempt by user: " + data.username);
 
-	private final Gson g = new Gson();
+        try {
+            Key userKey = userKeyFactory.newKey(data.username);
+            Entity user = datastore.get(userKey);
 
-	public LoginResource() {
+            if (user == null) {
+                LOG.warning("User not found: " + data.username);
+                return Response.status(Status.FORBIDDEN).entity("Incorrect username or password.").build();
+            }
 
-	}
+            // Verifica estado da conta
+            String accountState = user.getString("user_account_state");
+            LOG.info("Estado da conta de " + data.username + ": " + accountState);
+            if (!"ATIVADO".equalsIgnoreCase(accountState)) {
+                LOG.warning("Conta não está ativa: " + data.username);
+                return Response.status(Status.FORBIDDEN)
+                        .entity("{\"message\":\"Conta não está ativa. Aguarde ativação.\"}")
+                        .build();
+            }
 
-	@POST
-	@Path("/account")
-	@Consumes(MediaType.APPLICATION_JSON)
-	@Produces(MediaType.APPLICATION_JSON)
-	public Response accountLogin(LoginData data) {
-		LOG.fine(LOG_MESSAGE_LOGIN_ATTEMP + data.username);
+            // Verifica password
+            String hashedPWD = user.getString("user_pwd");
+            String hashedInput = org.apache.commons.codec.digest.DigestUtils.sha512Hex(data.password);
+            if (!hashedPWD.equals(hashedInput)) {
+                LOG.warning("Wrong password for: " + data.username);
+                return Response.status(Status.FORBIDDEN).entity("Incorrect username or password.").build();
+            }
 
-		Key userKey = userKeyFactory.newKey(data.username);
+            // Obtem role e valida
+            String role = user.getString("user_role");
+            LOG.info("Role para " + data.username + ": " + role);
+            if (!Roles.isValidRole(role)) {
+                LOG.warning("Role inválido para " + data.username + ": " + role);
+                return Response.status(Status.FORBIDDEN)
+                        .entity("{\"message\":\"Role inválido.\"}")
+                        .build();
+            }
+            
+            String foto = user.contains("user_photo") ? user.getString("user_photo") : null;
+            String email = user.getString("user_email");
 
-		Entity user = datastore.get(userKey);
-		if (user != null) {
-			String hashedPWD = user.getString("user_pwd");
-			if (hashedPWD.equals(DigestUtils.sha512Hex(data.password))) {
-				
-				LOG.info(LOG_MESSAGE_LOGIN_SUCCESSFUL + data.username);
-				String role = user.getString("user_role");
-				TokenAuth token = new TokenAuth(data.username, role);
-				KeyFactory logKeyFactory = datastore.newKeyFactory()
-						.addAncestor(PathElement.of("User", data.username))
-						.setKind("UserLog");
-				Key logKey = logKeyFactory.newKey(token.magicnumber);
-				Entity userLog = Entity.newBuilder(logKey)
-						.set("user_login_time", Timestamp.now())
-						.set("user_magic_number", token.magicnumber)
-						.set("validate_from", Timestamp.ofTimeSecondsAndNanos(token.validateFrom / 1000, 0))
-						.set("validate_to", Timestamp.ofTimeSecondsAndNanos(token.validateTo / 1000, 0))
-						.build();
-				datastore.put(userLog);
-				return Response.ok(g.toJson(token)).build();
-			} else {
-				LOG.warning(LOG_MESSAGE_WRONG_PASSWORD + data.username);
-				return Response.status(Status.FORBIDDEN)
-						.entity(MESSAGE_INVALID_CREDENTIALS)
-						.build();
-			}
-		} else {
-			LOG.warning(LOG_MESSAGE_UNKNOW_USER + data.username);
-			return Response.status(Status.FORBIDDEN)
-					.entity(MESSAGE_INVALID_CREDENTIALS)
-					.build();
-		}
-	}
+            // Prepara claims JWT
+            Map<String, Object> fields = new HashMap<>();
+            fields.put("role", role);
+            fields.put("username", data.username);
+            fields.put("photo", foto != null ? foto : "");
+            fields.put("email", email);
 
-	@POST
-	@Path("/logout")
-	@Consumes(MediaType.APPLICATION_JSON)
-	@Produces(MediaType.APPLICATION_JSON)
-	public Response logout(TokenAuth token) {
-		LOG.fine("Logout request for user: " + token.username);
+            // Cria token JWT
+            String token = JWTToken.createJWT(data.username, fields);
+            if (token == null) {
+                LOG.severe("Failed to create JWT for user: " + data.username);
+                return Response.status(Status.INTERNAL_SERVER_ERROR).entity("Failed to create JWT.").build();
+            }
 
-		// Step 1: Validate token expiration
-		long now = System.currentTimeMillis();
-		if (now > token.validateTo) {
-			LOG.warning("Logout failed: token expired for user " + token.username);
-			return Response.status(Status.UNAUTHORIZED)
-					.entity("{\"message\":\"Token is expired. Please login again.\"}")
-					.build();
-		}
-
-		// Step 2: Check if the token is valid by looking for it in the datastore
-		Key logoutKey = datastore.newKeyFactory()
-				.addAncestor(PathElement.of("User", token.username))
-				.setKind("RevokedToken")
-				.newKey(token.magicnumber);// Using the magic number as the key to mark this token as revoked
-
-		// If the token already exists, it means it's already revoked; in that case, no further action is required.
-		Entity existingRevokedToken = datastore.get(logoutKey);
-		if (existingRevokedToken != null) {
-			return Response.status(Status.BAD_REQUEST)
-					.entity("{\"message\":\"Token already revoked.\"}")
-					.build();
-		}
-
-		// Step 3: Store the revoked token in the datastore, marking it as revoked
-		Entity revokedToken = Entity.newBuilder(logoutKey)
-				.set("username", token.username)
-				.set("revoked_at", Timestamp.now())
-				.build();
-
-		datastore.put(revokedToken);
-
-		LOG.info("Token revoked for user: " + token.username);
-
-		// Step 4: Clean up session or user log entries (if you have session management)
-		try {
-			KeyFactory logKeyFactory = datastore.newKeyFactory()
-					.addAncestor(PathElement.of("User", token.username))
-					.setKind("UserLog");
-			Key possibleLogKey = logKeyFactory.newKey(token.magicnumber);
-			datastore.delete(possibleLogKey);
-			LOG.info("User log entry deleted for: " + token.username);
-		} catch (Exception e) {
-			LOG.warning("No user log found or failed to delete log for: " + token.username);
-		}
-
-		
-
-		// Return a response indicating successful logout
-		return Response.ok("{\"message\":\"Logout successful.\"}").build();
-	}
+            // Cria cookie seguro HTTP-only com o token
+            NewCookie cookie = new NewCookie.Builder("session::apdc")
+                    .value(token)
+                    .path("/")
+                    .comment("JWT session token")
+                    .maxAge((int) (JWTConfig.EXPIRATION_TIME / 1000))
+                    .secure(false) // true em produção com HTTPS
+                    .httpOnly(true)
+                    .build();
+            
+            JsonObject responseData = new JsonObject();
+            responseData.addProperty("username", data.username);
+            responseData.addProperty("role", role);
+            responseData.addProperty("photo", foto != null ? foto : "");
+            responseData.addProperty("token", token);
+            responseData.addProperty("email", email);
 
 
+            LOG.info("Login successful for user: " + data.username);
+            return Response.ok().cookie(cookie).entity(responseData.toString()).build();
+
+        } catch (Exception e) {
+            LOG.severe("Error during login: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            e.printStackTrace();
+            return Response.status(Status.INTERNAL_SERVER_ERROR)
+                    .entity("{\"message\":\"Internal error: " + e.getClass().getSimpleName() + " - " + e.getMessage() + "\"}")
+                    .build();
+        }
+    }
+
+    // Validação simples de permissões por role a partir do cookie JWT
+    public static boolean checkPermissions(Cookie cookie, String requiredRole) {
+        if (cookie == null || cookie.getValue() == null) {
+            return false;
+        }
+
+        DecodedJWT jwt = JWTToken.extractJWT(cookie.getValue());
+        if (jwt == null || !JWTToken.validateJWT(cookie.getValue())) {
+            return false;
+        }
+
+        String userRole = jwt.getClaim("role").asString();
+        return Roles.is(userRole, requiredRole);
+    }
 }

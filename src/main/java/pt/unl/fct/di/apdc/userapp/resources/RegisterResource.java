@@ -36,7 +36,7 @@ public class RegisterResource {
     public Response registerNewUser(AccountData data) {
         LOG.fine("Attempt to register user: " + data.username);
 
-        if (!data.validRegistration() || !Roles.isValidRole(data.role)) {
+        if (!data.validForRegistrationByRole() || !Roles.isValidRole(data.role)) {
             return Response.status(Status.BAD_REQUEST).entity("Dados obrigatórios em falta ou role inválido.").build();
         }
 
@@ -59,6 +59,7 @@ public class RegisterResource {
                 .set("user_role", data.role.toUpperCase())
                 .set("user_account_state", "INATIVO")
                 .set("user_creation_time", Timestamp.now())
+                .set("user_phone2", data.telephone2 != null ? data.telephone2 : "")
                 .set("user_address", data.address != null ? data.address : "")
                 .set("user_postal_code", data.postal_code != null ? data.postal_code : "")
                 .set("user_nif", data.nif != null ? data.nif : "")
@@ -77,7 +78,7 @@ public class RegisterResource {
             txn.put(userBuilder.build());
             txn.commit();
             LOG.info("Conta registada com sucesso: " + data.username);
-            return Response.ok().build();
+            return Response.ok().entity("OK").build();
 
         } catch (DatastoreException e) {
             LOG.log(Level.SEVERE, e.toString());

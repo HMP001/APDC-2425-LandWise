@@ -4,7 +4,6 @@ public class ChangePassword {
     public String currentPassword;
     public String newPassword;
     public String confirmPassword;
-    public TokenAuth token;
 
     public ChangePassword() {}
 }
