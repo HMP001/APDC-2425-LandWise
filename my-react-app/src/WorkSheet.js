@@ -20,12 +20,24 @@ async function fetchWorkSheet(id, navigate) {
     if (!response.ok) {
       throw new Error(`Error fetching worksheet: ${error}`);
     }
-    const data = await response.json();
+    const data = filterWorksheetFields(await response.json());
     return data;
   } catch (error) {
     console.error("Error fetching worksheet:", error);
     throw error; // Re-throw the error to be handled in the component
   }
+}
+
+// Utility to remove unwanted fields from the worksheet object
+function filterWorksheetFields(data) {
+  const {
+    created_at,
+    updated_at,
+    created_by,
+    updated_by,
+    ...filteredForm
+  } = data;
+  return filteredForm;
 }
 
 const WorksheetDisplay = React.memo(function WorksheetDisplay({
@@ -99,8 +111,8 @@ const WorksheetDisplay = React.memo(function WorksheetDisplay({
   const handleMapLoad = (map) => {
     mapRef.current = map;
     if (!hasAutoCenter && worksheet.features && Object.values(worksheet.features).length > 0 && mapRef.current) {
-        centerOnFeature(worksheet.features[Object.keys(worksheet.features)[0]]);
-        setHasAutoCenter(true);
+      centerOnFeature(worksheet.features[Object.keys(worksheet.features)[0]]);
+      setHasAutoCenter(true);
     }
   };
 
@@ -125,19 +137,19 @@ const WorksheetDisplay = React.memo(function WorksheetDisplay({
 
   const handleUndoAllEdits = () => {
     if (!selectedFeature || !worksheet.features[selectedFeature]) return;
-    
+
     // Get the original coordinates from the state variable (not redeclaring)
     const polygon = selectedPolygonRef.current?.polygon;
-    
+
     if (polygon && polygon.getPath && originalCoords) {
       const path = polygon.getPath();
-      
+
       // Clear and rebuild the path with original coordinates
       path.clear();
       originalCoords.forEach(([lng, lat]) => {
         path.push(new window.google.maps.LatLng(lat, lng));
       });
-      
+
       console.log("All edits undone, polygon reset to original state");
     }
   };
@@ -234,7 +246,7 @@ const WorksheetDisplay = React.memo(function WorksheetDisplay({
         );
       case 'Polygon':
         const isCurrentlySelected = String(selectedFeature) === String(feature.key);
-        
+
         const polygonElement = (
           <Polygon
             key={isCurrentlySelected && isEditing ? `editing-${feature.key}` : `feature-polygon-${feature.key}`}
@@ -352,6 +364,38 @@ const WorksheetDisplay = React.memo(function WorksheetDisplay({
         return null;
     }
   };
+
+  // Add this before your return statement
+  const featureKeys = Object.keys(worksheet.features);
+  const selectedIndex = featureKeys.findIndex(key => String(key) === String(selectedFeature));
+  const windowSize = 20; // Show 20 features at a time (10 before, 10 after)
+  
+  // Calculate start and end
+  let start = Math.max(0, selectedIndex - Math.floor(windowSize / 2));
+  let end = start + windowSize;
+  if (end > featureKeys.length) {
+    end = featureKeys.length;
+    start = Math.max(0, end - windowSize);
+  }
+  const showNext = end < featureKeys.length;
+  const showPrev = start > 0;
+
+  const visibleFeatures = featureKeys.slice(start + (showPrev ? 1 : 0), end - (showNext ? 1 : 0));
+
+  console.log("Visible features:", visibleFeatures);
+  console.log("Start index:", start, "End index:", end);
+
+  const [jumpKey, setJumpKey] = useState('');
+  const handleJumpToKey = () => {
+    if (jumpKey && worksheet.features[jumpKey]) {
+      setSelectedFeature(jumpKey);
+      setJumpKey('');
+    } else {
+      alert(`Feature with key ${jumpKey} does not exist.`);
+      setJumpKey('');
+    }
+  };
+
   return (
     <>
       <MemoizedGeneralInfo worksheet={worksheet} setWorksheet={setWorksheet} isViewMode={isViewMode} />
@@ -360,30 +404,41 @@ const WorksheetDisplay = React.memo(function WorksheetDisplay({
 
       <MemoizedOperations operations={operations} setWorksheet={setWorksheet} isViewMode={isViewMode} />
 
-      <MemoizedSelectedFeature worksheet={worksheet} setWorksheet={setWorksheet} selectedFeature={selectedFeature} setSelectedFeature={setSelectedFeature} isViewMode={isViewMode} /> 
+      <MemoizedSelectedFeature worksheet={worksheet} setWorksheet={setWorksheet} selectedFeature={selectedFeature} setSelectedFeature={setSelectedFeature} isViewMode={isViewMode} />
 
       {/* Feature Navigation Controls */}
-      {worksheet.features && Object.keys(worksheet.features).length > 0 && (
+      {worksheet.features && featureKeys.length > 0 && (
         <fieldset className="form-section">
           <legend>Feature Navigation</legend>
           <div style={{ padding: '10px', backgroundColor: '#e8f4fd', borderRadius: '4px', border: '1px solid #bee5eb' }}>
             <div style={{ marginBottom: '10px' }}>
               <h4 style={{ margin: '0', fontSize: '14px', color: '#0c5460' }}>
-                Navigate Features ({Object.values(worksheet.features).length} features)
+                Navigate Features ({featureKeys.length} features)
                 {selectedFeature && worksheet.features[selectedFeature] && <span style={{ fontWeight: 'normal' }}> - Selected: {worksheet.features[selectedFeature].properties?.aigp || 'Unknown'}-{worksheet.features[selectedFeature].properties?.polygon_id || 'Unknown'}</span>}
               </h4>
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
-              {Object.values(worksheet.features).map((feature, index) => {
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', alignItems: 'center' }}>
+              {showPrev && (
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary"
+                  style={{ fontSize: '11px', padding: '3px 8px', margin: '2px' }}
+                  onClick={() => setSelectedFeature(featureKeys[start - 1])}
+                >
+                  &laquo; Prev
+                </button>
+              )}
+              {visibleFeatures.map((key, index) => {
+                const feature = worksheet.features[key];
                 const isSelected = String(selectedFeature) === String(feature.key);
                 const displayLabel = feature.properties?.aigp && feature.properties?.polygon_id
                   ? `${feature.properties.aigp}-${feature.properties.polygon_id}`
-                  : feature.properties?.aigp || `${feature.geometry?.type} ${index + 1}`;
+                  : feature.properties?.aigp || `${feature.geometry?.type} ${start + index + 1}`;
                 return (
                   <button
                     key={`center-feature-${feature.key}`}
                     type="button"
-                    onClick={() => centerOnFeature(feature)}
+                    onClick={() => setSelectedFeature(feature.key)}
                     className={isSelected ? "btn btn-primary" : "btn btn-outline-primary"}
                     style={{
                       fontSize: '11px',
@@ -397,9 +452,43 @@ const WorksheetDisplay = React.memo(function WorksheetDisplay({
                   </button>
                 );
               })}
+              {showNext && (
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary"
+                  style={{ fontSize: '11px', padding: '3px 8px', margin: '2px' }}
+                  onClick={() => setSelectedFeature(featureKeys[end])}
+                >
+                  Next &raquo;
+                </button>
+              )}
+              </div>
+              {/* Centered Jump Controls */}
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: '10px', gap: '5px' }}>
+                <input
+                  type="text"
+                  value={jumpKey}
+                  onChange={e => setJumpKey(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleJumpToKey();
+                    }
+                  }}
+                  placeholder="Jump to key"
+                  style={{ fontSize: '11px', padding: '3px 8px', minWidth: '80px' }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-info"
+                  style={{ fontSize: '11px', padding: '3px 8px' }}
+                  onClick={handleJumpToKey}
+                >
+                  Jump
+                </button>
+              </div>
             </div>
-          </div>
-        </fieldset>
+          </fieldset>
       )}
 
       {/* Geometries */}
@@ -480,7 +569,7 @@ const WorksheetDisplay = React.memo(function WorksheetDisplay({
             }).filter(element => element !== null)
           )}
         </GoogleMap>
-        {selectedFeature && !isViewMode && editingControls}  
+        {selectedFeature && !isViewMode && editingControls}
       </fieldset>
     </>
   )
@@ -543,7 +632,7 @@ const MemoizedGeneralInfo = React.memo(function GeneralInfo({ worksheet, setWork
           name="status"
           value={localWorksheet.status || ""}
           onChange={handleLocalChange}
-            onBlur={handleChange}
+          onBlur={handleChange}
           required
           disabled={isViewMode}
         />
@@ -829,7 +918,7 @@ const MemoizedOperations = React.memo(function Operations({ operations, setWorks
               ...prevForm,
               operations: [...prevForm.operations, { operation_code: '', operation_description: '', area_ha: '' }]
             }))
-            }
+          }
           }>
           Add Operation
         </button>
@@ -840,61 +929,111 @@ const MemoizedOperations = React.memo(function Operations({ operations, setWorks
 
 const MemoizedSelectedFeature = React.memo(function SelectedFeature({ worksheet, setWorksheet, selectedFeature, setSelectedFeature, isViewMode }) {
   const [localSelectedFeature, setLocalSelectedFeature] = useState(worksheet.features[selectedFeature] || null);
+  const [keyError, setKeyError] = useState('');
 
   useEffect(() => {
     setLocalSelectedFeature(worksheet.features[selectedFeature] || null);
+    setKeyError('');
   }, [selectedFeature, worksheet.features]);
 
   const handleLocalSelectedFeatureChange = (event) => {
     const { name, value } = event.target;
-
-    setLocalSelectedFeature((prev) => ({
-      ...prev,
-      properties: {
-        ...prev.properties,
-        [name]: value
+    if (
+      name === 'polygon_id' &&
+      worksheet.features[value] &&
+      String(value) !== String(selectedFeature) // Only error if not the original key
+    ) {
+      setKeyError('This polygon_id already exists. Please choose a unique one.');
+    } else {
+      setKeyError('');
+    }
+    setLocalSelectedFeature((prev) => {
+      if (name === 'polygon_id') {
+        return {
+          ...prev,
+          key: value,
+          properties: {
+            ...prev.properties,
+            polygon_id: value
+          }
+        };
       }
-    }));
+      return {
+        ...prev,
+        properties: {
+          ...prev.properties,
+          [name]: value
+        }
+      };
+    });
   };
 
   const handleSelectedFeatureChange = (event) => {
     const { name, value } = event.target;
-
-    setWorksheet((prevForm) => {
-      const updatedFeatures = {
-        ...prevForm.features,
-        [selectedFeature]: {
-          ...prevForm.features[selectedFeature],
+    // On blur, if polygon_id is not unique, revert to previous key
+    if (name === 'polygon_id' && String(value) !== String(selectedFeature)) {
+      if (worksheet.features[value]) {
+        setKeyError(`This polygon_id already exists: "${value}". Please choose a unique one.`);
+        setLocalSelectedFeature(prev => ({
+          ...prev,
+          key: selectedFeature,
           properties: {
-            ...prevForm.features[selectedFeature].properties,
-            [name]: value
+            ...prev.properties,
+            polygon_id: selectedFeature
+          }
+        }));
+        return;
+      }
+    }
+    setWorksheet((prevForm) => {
+      let updatedFeatures = { ...prevForm.features };
+
+      let updatedAigp = { ...prevForm.aigp };
+
+      if (name === 'aigp') {
+        // Handle AIGP count update
+        const oldAigp = updatedFeatures[selectedFeature]?.properties?.aigp;
+        const newAigp = value;
+
+        // Decrement old AIGP count
+        if (oldAigp && updatedAigp[oldAigp]) {
+          updatedAigp[oldAigp]--;
+          if (updatedAigp[oldAigp] <= 0) {
+            // Always create a new object reference without the key
+            const { [oldAigp]: _removed, ...rest } = updatedAigp;
+            updatedAigp = { ...rest };
           }
         }
-      };
-
-      let updatedAigp = { ...(prevForm.aigp || {}) };
-      if (name === 'aigp') {
-        const prevAigpValue = prevForm.features[selectedFeature]?.properties?.aigp;
-
-        // Decrement count for previous AIGP if changed
-        if (prevAigpValue && prevAigpValue !== value && updatedAigp[prevAigpValue]) {
-          updatedAigp[prevAigpValue]--;
-          if (updatedAigp[prevAigpValue] <= 0) delete updatedAigp[prevAigpValue];
-        }
-        // Increment or set count for new AIGP
-        if (value) {
-          updatedAigp[value] = (updatedAigp[value] || 0) + 1;
+        // Increment new AIGP count
+        if (newAigp) {
+          updatedAigp[newAigp] = (updatedAigp[newAigp] || 0) + 1;
         }
       }
 
-      return {
-        ...prevForm,
-        features: updatedFeatures,
-        aigp: updatedAigp
-      };
+      if (name === 'polygon_id' && String(value) !== String(selectedFeature)) {
+        updatedFeatures[value] = {
+          ...updatedFeatures[selectedFeature],
+          key: value,
+          properties: {
+            ...updatedFeatures[selectedFeature].properties,
+            polygon_id: value
+          }
+        };
+        delete updatedFeatures[selectedFeature];
+        setSelectedFeature(value);
+      } else {
+        updatedFeatures[selectedFeature] = {
+          ...updatedFeatures[selectedFeature],
+          properties: {
+            ...updatedFeatures[selectedFeature].properties,
+            [name]: value
+          }
+        };
+      }
+      return { ...prevForm, features: updatedFeatures, aigp: updatedAigp };
     });
-    
   };
+
   return <>
     {/* Selected Feature Details */}
     {localSelectedFeature && (
@@ -909,6 +1048,12 @@ const MemoizedSelectedFeature = React.memo(function SelectedFeature({ worksheet,
             name="aigp"
             value={localSelectedFeature.properties?.aigp || ""}
             onChange={handleLocalSelectedFeatureChange}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleSelectedFeatureChange(e);
+              }
+            }}
             onBlur={handleSelectedFeatureChange}
             disabled={isViewMode}
             readOnly={isViewMode}
@@ -922,23 +1067,42 @@ const MemoizedSelectedFeature = React.memo(function SelectedFeature({ worksheet,
             name="UI_id"
             value={localSelectedFeature.properties?.UI_id || ""}
             onChange={handleLocalSelectedFeatureChange}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleSelectedFeatureChange(e);
+              }
+            }}
             onBlur={handleSelectedFeatureChange}
             disabled={isViewMode}
             readOnly={isViewMode}
           />
 
           <label className="form-label" htmlFor="feature_polygon_id">Polygon ID:</label>
-          <input
-            className="form-input"
-            id="feature_polygon_id"
-            type="text"
-            name="polygon_id"
-            value={localSelectedFeature.properties?.polygon_id || ""}
-            onChange={handleLocalSelectedFeatureChange}
-            onBlur={handleSelectedFeatureChange}
-            disabled={isViewMode}
-            readOnly={isViewMode}
-          />
+          <div className="input-error-container">
+            <input
+              className="form-input"
+              id="feature_polygon_id"
+              type="text"
+              name="polygon_id"
+              value={localSelectedFeature.properties?.polygon_id || ""}
+              onChange={handleLocalSelectedFeatureChange}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleSelectedFeatureChange(e);
+                }
+              }}
+              onBlur={handleSelectedFeatureChange}
+              disabled={isViewMode}
+              readOnly={isViewMode}
+            />
+            {keyError && (
+              <div className="form-error-inline">
+                {keyError}
+              </div>
+            )}
+          </div>
 
           <label className="form-label" htmlFor="feature_rural_property_id">Rural Property ID:</label>
           <input
@@ -948,6 +1112,12 @@ const MemoizedSelectedFeature = React.memo(function SelectedFeature({ worksheet,
             name="rural_property_id"
             value={localSelectedFeature.properties?.rural_property_id || ""}
             onChange={handleLocalSelectedFeatureChange}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleSelectedFeatureChange(e);
+              }
+            }}
             onBlur={handleSelectedFeatureChange}
             disabled={isViewMode}
             readOnly={isViewMode}
@@ -974,45 +1144,47 @@ const MemoizedSelectedFeature = React.memo(function SelectedFeature({ worksheet,
             Clear Selection
           </button>
           <>
-          {!isViewMode && (
-            <button
-              type="button"
-              className="btn btn-danger"
-              style={{ fontSize: '12px', padding: '5px 15px', marginLeft: '10px' }}
-              onClick={() => {
-                // Remove the selected feature from the worksheet
-                setWorksheet(prevForm => {
-                  const newFeatures = { ...prevForm.features };
-                  const removedFeature = newFeatures[selectedFeature];
-                  delete newFeatures[selectedFeature];
+            {!isViewMode && (
+              <button
+                type="button"
+                className="btn btn-danger"
+                style={{ fontSize: '12px', padding: '5px 15px', marginLeft: '10px' }}
+                onClick={() => {
+                  // Remove the selected feature from the worksheet
+                  setWorksheet(prevForm => {
+                    const newFeatures = { ...prevForm.features };
+                    const removedFeature = newFeatures[selectedFeature];
+                    delete newFeatures[selectedFeature];
 
-                  // If the removed feature had an AIGP, decrement its count
-                  let updatedAigp = { ...prevForm.aigp };
-                  const aigpKey = removedFeature.properties?.aigp;
-                  if (aigpKey && updatedAigp[aigpKey]) {
-                    updatedAigp[aigpKey]--;
-                    if (updatedAigp[aigpKey] <= 0) {
-                      // Remove the key with a new object reference
-                      const { [aigpKey]: _, ...rest } = updatedAigp;
-                      updatedAigp = rest;
+                    // If the removed feature had an AIGP, decrement its count
+                    let updatedAigp = { ...prevForm.aigp };
+                    const aigpKey = removedFeature.properties?.aigp;
+                    if (aigpKey && updatedAigp[aigpKey]) {
+                      updatedAigp[aigpKey]--;
+                      if (updatedAigp[aigpKey] <= 0) {
+                        // Remove the key with a new object reference
+                        const { [aigpKey]: _, ...rest } = updatedAigp;
+                        updatedAigp = rest;
+                      }
                     }
-                  }
 
-                  setTimeout(() => {const featureKeys = Object.keys(newFeatures);
-                    // If no features left, clear selected feature
-                    if (featureKeys.length === 0) {
-                      setSelectedFeature(null);
-                    } else {
-                      setSelectedFeature(featureKeys[0] || null);
-                  }}, 0);
-                  return { ...prevForm, aigp: updatedAigp, features: newFeatures };
-                });
-                
-              }}
-            >
-              Remove Feature
-            </button>
-          )}
+                    setTimeout(() => {
+                      const featureKeys = Object.keys(newFeatures);
+                      // If no features left, clear selected feature
+                      if (featureKeys.length === 0) {
+                        setSelectedFeature(null);
+                      } else {
+                        setSelectedFeature(featureKeys[0] || null);
+                      }
+                    }, 0);
+                    return { ...prevForm, aigp: updatedAigp, features: newFeatures };
+                  });
+
+                }}
+              >
+                Remove Feature
+              </button>
+            )}
           </>
         </div>
       </fieldset>
@@ -1051,33 +1223,34 @@ export default function WorkSheet({ mode }) {
     if (mode === 'edit') {
       let isMounted = true; // Track component mount status
       fetchWorkSheet(id, navigate)
-      .then(async data => {
-        if (!data) {
-          throw new Error("No data found for the given ID");
-        }
-        /*const detectedCRS = detectCRSFromGeoJSON(data);
-        let normalizedData;
-        if (detectedCRS && detectedCRS.code !== 'EPSG:4326') {
-          normalizedData = await convertGeoJSONToWorksheetWithCRS(data, detectedCRS);
-        } else {
-          normalizedData = convertGeoJSONToWorksheet(data);
-        }*/
-        const normalizedData = normalizeWorksheet(data);
-        normalizedData.id = id;
-        setForm(normalizedData);
-        setInitialForm(normalizedData);
-      })
-      .catch(err => {
-        console.error("Error fetching worksheet:", err);
-        setError("Failed to load worksheet data. Please try again later.");
-      })
-      .finally(() => {
-        if (isMounted) {
-          setLoadingWS(false)
-        }
-      });
-    return () => { isMounted = false; }; // Cleanup function to avoid state updates on unmounted component
-  }}, [mode, navigate, id]);
+        .then(async data => {
+          if (!data) {
+            throw new Error("No data found for the given ID");
+          }
+          /*const detectedCRS = detectCRSFromGeoJSON(data);
+          let normalizedData;
+          if (detectedCRS && detectedCRS.code !== 'EPSG:4326') {
+            normalizedData = await convertGeoJSONToWorksheetWithCRS(data, detectedCRS);
+          } else {
+            normalizedData = convertGeoJSONToWorksheet(data);
+          }*/
+          const normalizedData = normalizeWorksheet(data);
+          normalizedData.id = id;
+          setForm(normalizedData);
+          setInitialForm(normalizedData);
+        })
+        .catch(err => {
+          console.error("Error fetching worksheet:", err);
+          setError("Failed to load worksheet data. Please try again later.");
+        })
+        .finally(() => {
+          if (isMounted) {
+            setLoadingWS(false)
+          }
+        });
+      return () => { isMounted = false; }; // Cleanup function to avoid state updates on unmounted component
+    }
+  }, [mode, navigate, id]);
 
 
   if (loadingWS) {
@@ -1101,7 +1274,8 @@ export default function WorkSheet({ mode }) {
       // Convert AIGP array to comma-separated string for backend
       const formDataForBackend = {
         ...form,
-        aigp: Array.isArray(form.aigp) ? form.aigp.join(', ') : form.aigp
+        aigp: Object.keys(form.aigp) || [],
+        features: Object.values((form.features) || []).map(({ key, ...rest }) => rest)
       };
 
       const response = await fetch(mode === 'create' ? "/rest/worksheet/create" : "/rest/worksheet/updateStatus", {
@@ -1113,7 +1287,7 @@ export default function WorkSheet({ mode }) {
       });
       const data = await response.json();
       if (response.ok) {
-        navigate('/'); // Redirect to the worksheets list or detail page
+        navigate(`/worksheet/view/${form.id}`); // Redirect to the worksheets list or detail page
       } else {
         const errorData = data;
         setError(errorData.message || "Failed to create worksheet. Please try again later.");
@@ -1127,7 +1301,7 @@ export default function WorkSheet({ mode }) {
       setError("An error occurred while creating the worksheet. Please try again later.");
       if (mode === 'edit') {
         setForm(initialForm); // Reset to initial form if edit fails
-        
+
       }
       setLoading(false);
     }
@@ -1150,15 +1324,15 @@ export default function WorkSheet({ mode }) {
 
             {/* Submit/Error */}
             {error && <div className="form-error">{error}</div>}
-            <button 
-              className="btn btn-primary btn-large" 
+            <button
+              className="btn btn-primary btn-large"
               type="submit"
               disabled={loading}
             >
               {loading ? (
                 <>
-                  {mode === 'create' ? "Creating" : "Submiting" }  Worksheet
-                  <span className="spinner"/>
+                  {mode === 'create' ? "Creating" : "Submiting"}  Worksheet
+                  <span className="spinner" />
                 </>
               ) : (
                 mode === 'create' ? "Create Worksheet" : "Submit Worksheet"
@@ -1307,9 +1481,11 @@ async function worksheetToGeoJSON(worksheet, crsCode = 'EPSG:4326') {
   const features = await Promise.all(
     Object.values(worksheet.features).map(async (feature) => {
       try {
-        const convertCoords = await convertCoordinates(feature.geometry.coordinates, 'EPSG:4326', crsCode);
+        const convertCoords = await convertGeometryCoordinates(feature.geometry.coordinates, feature.geometry.type, 'EPSG:4326', crsCode);
+        console.log(`Converted coordinates for feature ${feature.key}:`, convertCoords);
+        const { key, featureWithoutKey } = feature;
         return {
-          ...feature,
+          ...featureWithoutKey,
           geometry: {
             ...feature.geometry,
             coordinates: convertCoords
@@ -1367,7 +1543,12 @@ export function ListWorkSheets() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
-          }
+          },
+          body: JSON.stringify({
+            status: null,
+            limit: 10,
+            offset: 0
+          })
         });
         CheckRequests(request, navigate);
 
@@ -1388,7 +1569,7 @@ export function ListWorkSheets() {
         });
         setWorksheets(normalizedWorksheets);
       } catch (err) {
-        if (isMounted) setError('Error fetching users. Please try again later.');
+        if (isMounted) setError('Error fetching worksheets. Please try again later.');
         console.error(err);
       } finally {
         if (isMounted) {
@@ -1423,26 +1604,74 @@ export function ListWorkSheets() {
           {error && <div className="form-error">{error}</div>}
           <h2 className="worksheet-list-header">WorkSheets List</h2>
           <ul style={{ listStyleType: 'none', padding: 0 }}>
-            {worksheets.map(worksheet => (
-              <li key={worksheet.title} style={{ marginBottom: 20, border: '1px solid #ccc', borderRadius: 4 }}>
+            {worksheets.map((worksheet, index) => {
+              const expandKey = worksheet.id || worksheet.title || String(index);
+              return (
+              <li key={expandKey} style={{ marginBottom: 20, border: '1px solid #ccc', borderRadius: 4 }}>
                 <div
                   style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', padding: 10 }}
-                  onClick={() => handleExpand(worksheet.title)}
+                  onClick={() => handleExpand(expandKey)}
                 >
-                  <span style={{ flex: 1 }}>Worksheet-{worksheet.title}</span>
-                  {expandedId === worksheet.title ? <FaChevronUp /> : <FaChevronDown />}
+                  <span style={{ flex: 1 }}>Worksheet-{expandKey}</span>
+                  {expandedId === expandKey ? <FaChevronUp /> : <FaChevronDown />}
                 </div>
-                {expandedId === worksheet.title && (
+                {expandedId === expandKey && (
                   <div style={{ padding: 10, background: '#f9f9f9' }}>
+                    <div className='worksheet-header-row'>
+                      <h2 className="worksheet-header">WorkSheet Details</h2>
+                      <button
+                        className="btn btn-secondary"
+                        type="button"
+                        onClick={async () => {
+                          const crsCode = window.prompt(
+                            "Enter desired CRS code (e.g., EPSG:4326 for WGS84, EPSG:3763 for Portugal):",
+                            "EPSG:4326"
+                          );
+                          if (!crsCode) return;
+                          // Optionally, you could convert coordinates here if needed
+                          const geojson = await worksheetToGeoJSON(worksheet, crsCode);
+                          const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: "application/geo+json" });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `worksheet-${worksheet.id || 'export'}.geojson`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }}
+                      >
+                        Download as GeoJSON
+                      </button>
+                    </div>
                     <WorksheetDisplay
                       worksheet={worksheet}
                       setForm={() => { }}
                       isViewMode={true}
                     />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
+                      <button
+                        className="btn btn-danger"
+                        type="button"
+                        onClick={() => {
+                          <DeleteWorkSheet
+                            id={worksheet.id}
+                          />
+                        }}
+                      >
+                        Delete WorkSheet
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-success"
+                        onClick={() => navigate(`/executionsheet/${worksheet.id}`)}
+                      >
+                        View Execution Sheet
+                      </button>
+                    </div>
                   </div>
                 )}
               </li>
-            ))}
+              )}
+            )}
           </ul>
         </div>
       </div>
@@ -1461,10 +1690,10 @@ function normalizeAigpData(aigpData) {
         const arr = JSON.parse(keys[0]);
         if (Array.isArray(arr)) {
           const map = {};
-          arr.forEach(aigp => { if (aigp) map[aigp] = aigpData[keys[0]]; });
+          arr.forEach(aigp => { if (aigp) map[aigp] = Number.MAX_SAFE_INTEGER; });
           return map;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
     return aigpData;
   }
@@ -1476,7 +1705,7 @@ function normalizeAigpData(aigpData) {
       parsed = JSON.parse(aigpData);
       if (Array.isArray(parsed)) {
         const map = {};
-        parsed.forEach(aigp => { if (aigp) map[aigp] = 1; });
+        parsed.forEach(aigp => { if (aigp) map[aigp] = Number.MAX_SAFE_INTEGER; });
         return map;
       }
     } catch (e) {
@@ -1484,7 +1713,7 @@ function normalizeAigpData(aigpData) {
       if (aigpData.trim() === '') return {};
       const map = {};
       aigpData.split(',').map(item => item.trim()).filter(item => item !== '').forEach(aigp => {
-        map[aigp] = 1;
+        map[aigp] = Number.MAX_SAFE_INTEGER;
       });
       return map;
     }
@@ -1493,7 +1722,7 @@ function normalizeAigpData(aigpData) {
   // If it's already an array, convert to count map
   if (Array.isArray(aigpData)) {
     const map = {};
-    aigpData.forEach(aigp => { if (aigp) map[aigp] = 1; });
+    aigpData.forEach(aigp => { if (aigp) map[aigp] = Number.MAX_SAFE_INTEGER; });
     return map;
   }
 
@@ -1531,12 +1760,11 @@ function normalizeWorksheet(data) {
     posp_description: data.posp_description || '',
     aigp: normalizeAigpData(data.aigp),
     operations: Array.isArray(data.operations) ? data.operations : (typeof data.operations === "string" ? JSON.parse(data.operations) : []),
-    polygon: data.polygon || [],
     features: Object.fromEntries(
       featuresArray.map((feature, idx) => {
         // Ensure each feature has a unique key
         const key = feature.properties?.polygon_id || feature.properties?.id || `${Date.now()}_${idx}`;;
-        return [key, {...feature, key}];
+        return [key, { ...feature, key }];
       })
     )
   };
@@ -1674,7 +1902,7 @@ const convertGeoJSONToWorksheet = (geoJsonData) => {
     features: Object.fromEntries(
       (geoJsonData.features || []).map((feature, idx) => {
         const key = feature.properties?.polygon_id || feature.properties?.id || `${Date.now()}_${idx}`;;
-        return [key, {...feature, key}];
+        return [key, { ...feature, key }];
       })
     )
   };
@@ -1781,7 +2009,7 @@ export function UploadWorkSheet() {
     formData.append('file', file);
 
     const aigp = Object.keys(worksheetData.aigp) || []
-    const features = Object.values((worksheetData.features) || []).map(({key, ...rest}) => rest);
+    const features = Object.values((worksheetData.features) || []).map(({ key, ...rest }) => rest);
 
     try {
       const response = await fetch("/rest/worksheet/create", {
@@ -1791,6 +2019,7 @@ export function UploadWorkSheet() {
         },
         body: JSON.stringify({
           id: worksheetData.id || '',
+          title: worksheetData.title || '',
           status: worksheetData.status || '',
           starting_date: worksheetData.starting_date || '',
           finishing_date: worksheetData.finishing_date || '',
@@ -1810,7 +2039,7 @@ export function UploadWorkSheet() {
       });
       const data = await response.json();
       if (response.ok) {
-        navigate('/'); // Redirect to the worksheets list or detail page
+        navigate(`/worksheet/view/${worksheetData.id}`); // Redirect to the worksheets list or detail page
       } else {
         const errorData = data;
         setError(errorData.message || "Failed to upload worksheet. Please try again later.");
@@ -1940,10 +2169,10 @@ export function UploadWorkSheet() {
                     {loading ? (
                       <>
                         Submiting...
-                        <span className="spinner"/>
+                        <span className="spinner" />
                       </>
                     ) : (
-                    'Confirm and Upload to Server'
+                      'Confirm and Upload to Server'
                     )}
                   </button>
                 </div>
@@ -2147,7 +2376,7 @@ async function ensureProj4Definition(epsgCode) {
   }
 }
 
-proj4.defs("EPSG:3763","+proj=tmerc +lat_0=39.6682583333333 +lon_0=-8.13310833333333 +k=1 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs");
+proj4.defs("EPSG:3763", "+proj=tmerc +lat_0=39.6682583333333 +lon_0=-8.13310833333333 +k=1 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs");
 proj4.defs("EPSG:4326", proj4.WGS84);
 
 /**
@@ -2306,11 +2535,11 @@ export function DeleteWorkSheet({ worksheetId }) {
       <p>Are you sure you want to delete the worksheet with ID: <strong>{worksheetId}</strong>?</p>
       <button onClick={handleDelete} className="btn btn-danger">
         {loading ? (
-            <>
-              Deleting...
-              <span className="spinner"/>
-            </>
-          ) : (
+          <>
+            Deleting...
+            <span className="spinner" />
+          </>
+        ) : (
           'Delete WorkSheet'
         )}
       </button>

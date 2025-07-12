@@ -31,7 +31,10 @@ export default function Home() {
   const navigate = useNavigate();
   const [worksheetModal, setWorksheetModal] = useState(null);
 
-  const { username, photo, role, token } = JSON.parse(sessionStorage.getItem('userInfo') || '{}');
+  const { username, photo, role, token } = JSON.parse(
+    sessionStorage.getItem('userInfo') ||
+    '{"username": null, "photo": null, "role": "VU", "token": null}'
+  );
   console.log("User Info:", { username, photo, role, token });
 
   return (
@@ -65,6 +68,7 @@ export default function Home() {
         </div>
       </div>
       <div className="home-main">
+        {role !== 'VU' && (
         <div className="home-sidebar">
           <h3>User</h3>
           <button className="btn btn-primary" onClick={() => navigate('/user/attributes')}>Edit Attributes</button>
@@ -83,6 +87,7 @@ export default function Home() {
             </>
           )}
         </div>
+        )}
         <div className="home-content">
           <h1>Welcome to the Home Page</h1>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
