@@ -37,8 +37,111 @@ export default function Home() {
   );
   console.log("User Info:", { username, photo, role, token });
 
+  // Always show top bar
+  const TopBar = (
+    <div className="home-topbar">
+      <img src="/Logo.jpeg" alt="Logo" className="home-logo" />
+      <div className="home-top-right">
+        {role === 'RU' ? (
+          <>
+            <button className="btn btn-danger btn-small" onClick={() => { Logout(token, navigate); }}>Logout</button>
+            <span>Logged in as: {username}</span>
+            {photo && (
+              <div className="profile-picture-container">
+                <img
+                  src={photo}
+                  alt="Profile"
+                  className="profile-picture"
+                  onClick={() => window.open(photo, '_blank')}
+                  title="Click to view full size"
+                />
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <span className="visitor-span">Currently navigating as Visitor</span>
+            <button className="btn btn-primary btn-small" onClick={() => navigate('/login')}>Login</button>
+            <button className="btn btn-success btn-small" onClick={() => navigate('/register')}>Register</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  // Special home for VU or RU
+  if (role === 'VU' || role === 'RU') {
+    return (
+      <div
+        className="home-root special-home"
+        style={{
+          backgroundImage: 'url(/background-home.jpg)',
+          backgroundSize: 'cover',
+          backgroundRepeat: 'no-repeat',
+          backgroundPosition: 'center center',
+        }}
+      >
+        {TopBar}
+        <div className="special-home-container">
+          <div
+            className="special-home-column event-sample"
+            onClick={() => navigate('/event')}
+            tabIndex={0}
+            role="button"
+            title="Go to Events"
+          >
+            <h2>Upcoming Events</h2>
+            <div className="sample-scroll">
+              {/* Dummy event data */}
+              {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
+                <div className="event-card" key={i}>
+                  <h4>Event {i}</h4>
+                  <p>Date: 2024-07-{10 + i}</p>
+                  <p>Location: Venue {i}</p>
+                  <p>Description: This is a sample event description for event {i}.</p>
+                </div>
+              ))}
+            </div>
+            <div className="sample-overlay">Click to view all events</div>
+          </div>
+          <div
+            className="special-home-column media-sample"
+            onClick={() => navigate('/media')}
+            tabIndex={0}
+            role="button"
+            title="Go to Media"
+          >
+            <h2>Social Media Feed</h2>
+            <div className="sample-scroll">
+              {/* Dummy media data */}
+              {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
+                <div className="media-card" key={i}>
+                  <div className="media-header">
+                    <img src={`/dummy-profile-${1}.png`} alt="User" className="media-avatar" />
+                    <span>User{i}</span>
+                  </div>
+                  <p>This is a sample post #{i} on the social feed.</p>
+                  <img src={`/dummy-media-${1}.jpg`} alt="Media" className="media-img" />
+                </div>
+              ))}
+            </div>
+            <div className="sample-overlay">Click to view social feed</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="home-root">
+    <div
+      className="home-root"
+      style={{
+        backgroundImage: 'url(/background-home.jpg)',
+        backgroundSize: 'cover',
+        backgroundRepeat: 'no-repeat',
+        backgroundPosition: 'center center',
+      }}
+    >
       <div className="home-topbar">
         <img src="/Logo.jpeg" alt="Logo" className="home-logo" />
         <div className="home-top-right">
@@ -60,7 +163,7 @@ export default function Home() {
             </>
           ) : (
             <>
-              <span>Currently navigating as Visitor</span>
+              <span className="visitor-span">Currently navigating as Visitor</span>
               <button className="btn btn-primary btn-small" onClick={() => navigate('/login')}>Login</button>
               <button className="btn btn-success btn-small" onClick={() => navigate('/register')}>Register</button>
             </>
@@ -68,25 +171,25 @@ export default function Home() {
         </div>
       </div>
       <div className="home-main">
-        {role !== 'VU' && (
-        <div className="home-sidebar">
-          <h3>User</h3>
-          <button className="btn btn-primary" onClick={() => navigate('/user/attributes')}>Edit Attributes</button>
-          <button className="btn btn-info" onClick={() => navigate('/user/changePassword')}>Change Password</button>
-          <button className="btn btn-info" onClick={() => navigate('/user/changeRole')}>Change Role</button>
-          <button className="btn btn-info" onClick={() => navigate('/user/changeState')}>Change State</button>
-          <button className="btn btn-outline" onClick={() => navigate('/user/listUsers')}>List Users</button>
-          {(role === 'SYSADMIN' || role === 'SMBO') && (
-            <>
-              <h3>Worksheets</h3>
-              <button className="btn btn-primary" onClick={() => navigate('/worksheet/create')}>Create Worksheet</button>
-              <button className="btn btn-success" onClick={() => navigate('/worksheet/upload')}>Upload Worksheet</button>
-              <button className="btn btn-info" onClick={() => {setWorksheetModal('edit')}}>Edit Worksheet</button>
-              <button className="btn btn-info" onClick={() => setWorksheetModal('view')}>View Worksheet</button>
-              <button className="btn btn-outline" onClick={() => navigate('/worksheet/list')}>List Worksheets</button>
-            </>
-          )}
-        </div>
+        {(role !== 'VU' || role !== 'RU') && (
+          <div className="home-sidebar">
+            <h3>User</h3>
+            <button className="btn btn-primary" onClick={() => navigate('/user/attributes')}>Edit Attributes</button>
+            <button className="btn btn-info" onClick={() => navigate('/user/changePassword')}>Change Password</button>
+            <button className="btn btn-info" onClick={() => navigate('/user/changeRole')}>Change Role</button>
+            <button className="btn btn-info" onClick={() => navigate('/user/changeState')}>Change State</button>
+            <button className="btn btn-outline" onClick={() => navigate('/user/listUsers')}>List Users</button>
+            {(role === 'SYSADMIN' || role === 'SMBO') && (
+              <>
+                <h3>Worksheets</h3>
+                <button className="btn btn-primary" onClick={() => navigate('/worksheet/create')}>Create Worksheet</button>
+                <button className="btn btn-success" onClick={() => navigate('/worksheet/upload')}>Upload Worksheet</button>
+                <button className="btn btn-info" onClick={() => { setWorksheetModal('edit') }}>Edit Worksheet</button>
+                <button className="btn btn-info" onClick={() => setWorksheetModal('view')}>View Worksheet</button>
+                <button className="btn btn-outline" onClick={() => navigate('/worksheet/list')}>List Worksheets</button>
+              </>
+            )}
+          </div>
         )}
         <div className="home-content">
           <h1>Welcome to the Home Page</h1>
@@ -117,7 +220,7 @@ function logoutAndRedirect(navigate) {
   navigate('/login');
 }
 
-function SelectWorksheet({onClose, mode}) {
+function SelectWorksheet({ onClose, mode }) {
   const [id, setId] = useState('');
   const inputRef = useRef(null);
   const navigate = useNavigate();

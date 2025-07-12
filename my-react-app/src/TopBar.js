@@ -1,6 +1,6 @@
 import './TopBar.css';
 
-export const topBar = (navigate) => {
+export default function TopBar({ navigate, title }) {
   return (
     <div className="topbar">
       <button
@@ -11,6 +11,7 @@ export const topBar = (navigate) => {
       >
         &lt;
       </button>
+      {title && <span className="topbar-title">{title}</span>}
       <button
         type="button"
         className="home-button"
@@ -20,5 +21,8 @@ export const topBar = (navigate) => {
         &#8962;
       </button>
     </div>
-  )
-};
+  );
+}
+
+// For backward compatibility with old imports
+export const topBar = (navigate) => <TopBar navigate={navigate} />;

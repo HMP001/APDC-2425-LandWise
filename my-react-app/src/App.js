@@ -1,16 +1,19 @@
 import './App.css';
-import Login from './Login';
-import Register from './Register';
-import List from './List';
-import { Attributes, ChangePassword, ChangeRole, ChangeState } from './Attributes';
-import WorkSheet, { ViewWorkSheet, ListWorkSheets, UploadWorkSheet } from './WorkSheet';
-import { ViewExecutionSheet } from './ExecutionSheet';
+
 import { Route, Routes } from 'react-router-dom';
 import Home from './Home';
 import { useNavigate } from 'react-router-dom';
 import { LoadScript } from '@react-google-maps/api';
 import { useEffect, useState } from 'react';
 import { ToastContainer } from 'react-toastify';
+import Login from './Login';
+import Register from './Register';
+import List from './List';
+import { Attributes, ChangePassword, ChangeRole, ChangeState } from './Attributes';
+import WorkSheet, { ViewWorkSheet, ListWorkSheets, UploadWorkSheet } from './WorkSheet';
+import { ViewExecutionSheet } from './ExecutionSheet';
+import Media from './Media';
+import Event from './Event';
 
 const GOOGLE_MAP_LIBRARIES = ['drawing'];
 
@@ -41,6 +44,8 @@ function App() {
           <Route path="/worksheet/list" element={<ListWorkSheets />} />
           <Route path="/worksheet/upload" element={<UploadWorkSheet />} />
           <Route path="/executionsheet/:id" element={<ViewExecutionSheet />} />
+          <Route path="/media" element={<Media />} />
+          <Route path="/event" element={<Event />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </LoadScript>
