@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import './ExecutionSheet.css';
 import CheckRequests from './CheckRequests';
 import { topBar } from './TopBar';
+import { fetchWsNorm } from './WorkSheet';
 
 /**
  * ExecutionSheet Component - UI for viewing and managing execution sheets
@@ -13,6 +14,7 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
   const [editMode, setEditMode] = useState(false);
   const [selectedPolygon, setSelectedPolygon] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
+  const [searchPolygonKey, setSearchPolygonKey] = useState('');
 
   // Initialize execution sheet data
   useEffect(() => {
@@ -305,11 +307,88 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
         {activeTab === 'polygons' && (
           <div className="polygons-section">
             <h3>Polygon Operations</h3>
-            <div className="polygons-grid">
+            {/* Polygon Search Bar */}
+            <div style={{ marginBottom: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                type="text"
+                placeholder="Search polygon key/id..."
+                value={searchPolygonKey}
+                onChange={e => setSearchPolygonKey(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    const found = executionSheet.polygons_operations.find(
+                      po => String(po.polygon_id).toLowerCase() === searchPolygonKey.trim().toLowerCase()
+                    );
+                    if (found) {
+                      setSelectedPolygon(found.polygon_id);
+                      setTimeout(() => {
+                        const el = document.getElementById(`polygon-card-${found.polygon_id}`);
+                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }, 0);
+                    } else {
+                      alert('Polygon not found');
+                    }
+                  }
+                }}
+                className="form-control"
+                style={{ maxWidth: 180 }}
+              />
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  const found = executionSheet.polygons_operations.find(
+                    po =>
+                      String(po.polygon_id).toLowerCase() === searchPolygonKey.trim().toLowerCase()
+                  );
+                  if (found) {
+                    setSelectedPolygon(found.polygon_id);
+                    setTimeout(() => {
+                      const el = document.getElementById(`polygon-card-${found.polygon_id}`);
+                      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }, 0);
+                  } else {
+                    alert('Polygon not found');
+                  }
+                }}
+                disabled={!searchPolygonKey.trim()}
+              >
+                Go
+              </button>
+            </div>
+            <div
+              className="polygons-grid"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: 24,
+                maxHeight: 700, // About 3 cards tall, but flexible for card content
+                overflowY: 'auto',
+                padding: '8px',
+                margin: '0 auto',
+                width: '100%',
+                boxSizing: 'border-box',
+                background: '#fafbfc',
+                borderRadius: 12,
+                border: '1px solid #e3e6ea'
+              }}
+            >
               {executionSheet.polygons_operations.map((polygonOps) => (
                 <div
                   key={polygonOps.polygon_id}
+                  id={`polygon-card-${polygonOps.polygon_id}`}
                   className={`polygon-card ${selectedPolygon === polygonOps.polygon_id ? 'selected' : ''}`}
+                  style={{
+                    background: '#fff',
+                    border: selectedPolygon === polygonOps.polygon_id ? '2px solid #007bff' : '1px solid #d1d5db',
+                    borderRadius: 8,
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                    margin: 0,
+                    padding: '12px',
+                    boxSizing: 'border-box',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'flex-start'
+                  }}
                   onClick={() => setSelectedPolygon(polygonOps.polygon_id)}
                 >
                   <div className="polygon-header">
@@ -416,57 +495,195 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
 };
 export default ExecutionSheet;
 
-export function ViewExecutionSheet(id) {
+/**function createExecutionSheetFromWorksheet(worksheet) {
+  // Ensure worksheet is normalized
+  const ws = worksheet;
+
+  // Only use features that are polygons
+  const polygons = ws.features && typeof ws.features === 'object'
+    ? Object.values(ws.features)
+      .filter(f => f.geometry && f.geometry.type === "Polygon")
+      .map(f => ({
+        polygon_id: f.properties?.polygon_id || f.properties?.id || f.key || f.id
+      }))
+    : [];
+
+  // Map operations per polygon
+  const operations = Array.isArray(ws.operations) ? ws.operations : [];
+  const polygons_operations = polygons.map(poly => {
+    // Try to find per-polygon operations if present in worksheet
+    let polyOps = [];
+    if (ws.polygons_operations && Array.isArray(ws.polygons_operations)) {
+      const found = ws.polygons_operations.find(po =>
+        String(po.polygon_id) === String(poly.polygon_id || poly.id)
+      );
+      if (found && Array.isArray(found.operations)) {
+        polyOps = found.operations.map(op => ({
+          operation_code: op.operation_code,
+          status: op.status || "unassigned",
+          starting_date: op.starting_date || "",
+          finishing_date: op.finishing_date || "",
+          last_activity_date: op.last_activity_date || "",
+          observations: op.observations || "",
+          tracks: Array.isArray(op.tracks) ? op.tracks : [],
+          activity_id: op.activity_id || ""
+        }));
+      }
+    }
+    // If not found, create default operations for each operation_code
+    if (polyOps.length === 0) {
+      polyOps = operations.map(op => ({
+        operation_code: op.operation_code,
+        status: "unassigned",
+        starting_date: "",
+        finishing_date: "",
+        last_activity_date: "",
+        observations: "",
+        tracks: [],
+        activity_id: ""
+      }));
+    }
+    return {
+      polygon_id: poly.polygon_id || poly.id,
+      operations: polyOps
+    };
+  });
+
+  return {
+    id: ws.id || null, // ID will be assigned by the backend
+    worksheet_id: ws.id || ws.worksheet_id,
+    starting_date: ws.starting_date || "",
+    finishing_date: ws.finishing_date || "",
+    last_activity_date: "",
+    observations: "",
+    operations: operations.map(op => ({
+      operation_code: op.operation_code,
+      area_ha_executed: 0,
+      area_perc: 0,
+      starting_date: "",
+      finishing_date: "",
+      observations: ""
+    })),
+    polygons_operations
+  };
+}*/
+
+export async function CreateExecutionSheet(id, setExecutionSheetData, setError, setLoading, navigate) {
+  // Call backend to create execution sheet for worksheet id, then fetch it and navigate to its page
+  setLoading && setLoading(true);
+  setError && setError(null);
+  try {
+    const res = await fetch('/rest/execution/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    if (!res.ok) throw new Error('Failed to create execution sheet');
+    let newId = id;
+    try {
+      const data = await res.json();
+      if (data && data.id) newId = data.id;
+    } catch { }
+    // Optionally fetch the execution sheet (not required if page will fetch on navigation)
+    if (setExecutionSheetData) {
+      const response = await fetch(`/rest/executionsheet/${newId}`);
+      if (!response.ok) throw new Error('Failed to fetch execution sheet');
+      const sheet = await response.json();
+      setExecutionSheetData(sheet);
+    }
+    // Navigate to the execution sheet page
+    if (navigate) {
+      navigate(`/executionsheet/${newId}`);
+    }
+  } catch (e) {
+    if (setError) setError('Failed to create or fetch execution sheet.');
+    throw e;
+  } finally {
+    setLoading && setLoading(false);
+  }
+}
+
+export function ViewExecutionSheet() {
   const navigate = useNavigate();
+  const { id } = useParams();
   const [loading, setLoading] = useState(true);
   const [executionSheetData, setExecutionSheetData] = useState(null);
   const [error, setError] = useState(null);
-  
+
+  // Fetch execution sheet if exists
   useEffect(() => {
     let mounted = true;
     async function fetchData() {
+      if (!id) return;
+      setLoading(true);
       try {
         const response = await fetch(`/rest/executionsheet/${id}`);
+        if (response.status === 404) {
+          if (mounted) setExecutionSheetData(null);
+          // Do not show create prompt, just show error or export option
+          return;
+        }
         if (!response.ok) throw new Error('Failed to fetch execution sheet');
         const data = await response.json();
         CheckRequests(data, navigate);
         if (mounted) setExecutionSheetData(data);
       } catch (err) {
-        console.error('Error fetching execution sheet:', err);
         if (mounted) setError('Failed to load execution sheet data.');
       } finally {
         if (mounted) setLoading(false);
       }
     }
     fetchData();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [id, navigate]);
 
   if (loading) {
-      return (
-        <>
-          {topBar(navigate)}
-          <div className="loading-container">
-            <div className="loading-spinner"></div>
-            <p>Loading Execution Sheet...</p>
+    return (
+      <>
+        {topBar && typeof topBar === 'function' ? topBar(navigate) : topBar}
+        <div>Loading...</div>
+      </>
+    );
+  }
+
+  if (error) {
+    return (
+      <>
+        {topBar && typeof topBar === 'function' ? topBar(navigate) : topBar}
+        <div className="error-message">{error}</div>
+      </>
+    );
+  }
+
+  if (!executionSheetData) {
+    // Show dummy execution sheet if not found
+    return (
+      <>
+        {topBar && typeof topBar === 'function' ? topBar(navigate) : topBar}
+        <div className="execution-sheet-container" style={{ textAlign: 'center', marginTop: 48 }}>
+          <div className="error-message" style={{ marginBottom: 24 }}>
+            <p>No execution sheet found for this worksheet.<br />For now showing dummy execution sheet. (Later: show error only)</p>
           </div>
-        </>
-      );
-    }
-  /**if (error) {
-    return <>{topBar(navigate)}<div className="error-message">{error}</div></>;
-  }*/
+          <ExecutionSheet
+            executionSheetData={null}
+            onSave={null}
+            onClose={() => navigate(-1)}
+            isEditable={false}
+          />
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
-      {topBar(navigate)}
+      {topBar && typeof topBar === 'function' ? topBar(navigate) : topBar}
       <ExecutionSheet
         executionSheetData={executionSheetData}
-        onClose={() => navigate('/worksheet/list')}
-        isEditable={false}
+        onSave={null}
+        onClose={() => navigate(-1)}
+        isEditable={true}
       />
     </>
   );
 }
-  

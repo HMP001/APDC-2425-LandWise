@@ -8,9 +8,10 @@ import CheckRequests from './CheckRequests';
 import './AuthForm.css';
 import proj4 from 'proj4'
 
-async function fetchWorkSheet(id, navigate) {
+export async function fetchWorkSheet(id, navigate, generic = false) {
+  const endpoint = generic ? `/rest/worksheet/view/${id}` : `/rest/worksheet/viewDetailed/${id}`;
   try {
-    const response = await fetch(`/rest/worksheet/view/${id}`, {
+    const response = await fetch(endpoint, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json'
@@ -369,7 +370,7 @@ const WorksheetDisplay = React.memo(function WorksheetDisplay({
   const featureKeys = Object.keys(worksheet.features);
   const selectedIndex = featureKeys.findIndex(key => String(key) === String(selectedFeature));
   const windowSize = 20; // Show 20 features at a time (10 before, 10 after)
-  
+
   // Calculate start and end
   let start = Math.max(0, selectedIndex - Math.floor(windowSize / 2));
   let end = start + windowSize;
@@ -462,33 +463,33 @@ const WorksheetDisplay = React.memo(function WorksheetDisplay({
                   Next &raquo;
                 </button>
               )}
-              </div>
-              {/* Centered Jump Controls */}
-              <div style={{ display: 'flex', justifyContent: 'center', marginTop: '10px', gap: '5px' }}>
-                <input
-                  type="text"
-                  value={jumpKey}
-                  onChange={e => setJumpKey(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleJumpToKey();
-                    }
-                  }}
-                  placeholder="Jump to key"
-                  style={{ fontSize: '11px', padding: '3px 8px', minWidth: '80px' }}
-                />
-                <button
-                  type="button"
-                  className="btn btn-info"
-                  style={{ fontSize: '11px', padding: '3px 8px' }}
-                  onClick={handleJumpToKey}
-                >
-                  Jump
-                </button>
-              </div>
             </div>
-          </fieldset>
+            {/* Centered Jump Controls */}
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '10px', gap: '5px' }}>
+              <input
+                type="text"
+                value={jumpKey}
+                onChange={e => setJumpKey(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleJumpToKey();
+                  }
+                }}
+                placeholder="Jump to key"
+                style={{ fontSize: '11px', padding: '3px 8px', minWidth: '80px' }}
+              />
+              <button
+                type="button"
+                className="btn btn-info"
+                style={{ fontSize: '11px', padding: '3px 8px' }}
+                onClick={handleJumpToKey}
+              >
+                Jump
+              </button>
+            </div>
+          </div>
+        </fieldset>
       )}
 
       {/* Geometries */}
@@ -1192,6 +1193,26 @@ const MemoizedSelectedFeature = React.memo(function SelectedFeature({ worksheet,
   </>
 });
 
+/**
+ * Fetches a worksheet by ID, checks for errors, and normalizes the data.
+ * Use this instead of fetchWorkSheet directly in View and Edit.
+ * @param {string} id - Worksheet ID
+ * @param {function} navigate - Navigation function
+ * @param {boolean} [generic=false] - If true, fetches generic worksheet view
+ * @returns {Promise<Object>} - Normalized worksheet object
+ */
+export async function fetchWsNorm(id, navigate, generic = false) {
+  try {
+    const data = await fetchWorkSheet(id, navigate, generic);
+    if (!data) throw new Error("No data found for the given ID");
+    const normalizedData = normalizeWorksheet(data);
+    normalizedData.id = id;
+    return normalizedData;
+  } catch (err) {
+    console.error("Error fetching and normalizing worksheet:", err);
+    throw err;
+  }
+}
 
 export default function WorkSheet({ mode }) {
   const { id } = useParams();
@@ -1221,21 +1242,9 @@ export default function WorkSheet({ mode }) {
 
   useEffect(() => {
     if (mode === 'edit') {
-      let isMounted = true; // Track component mount status
-      fetchWorkSheet(id, navigate)
-        .then(async data => {
-          if (!data) {
-            throw new Error("No data found for the given ID");
-          }
-          /*const detectedCRS = detectCRSFromGeoJSON(data);
-          let normalizedData;
-          if (detectedCRS && detectedCRS.code !== 'EPSG:4326') {
-            normalizedData = await convertGeoJSONToWorksheetWithCRS(data, detectedCRS);
-          } else {
-            normalizedData = convertGeoJSONToWorksheet(data);
-          }*/
-          const normalizedData = normalizeWorksheet(data);
-          normalizedData.id = id;
+      let isMounted = true;
+      fetchWsNorm(id, navigate)
+        .then(normalizedData => {
           setForm(normalizedData);
           setInitialForm(normalizedData);
         })
@@ -1244,11 +1253,9 @@ export default function WorkSheet({ mode }) {
           setError("Failed to load worksheet data. Please try again later.");
         })
         .finally(() => {
-          if (isMounted) {
-            setLoadingWS(false)
-          }
+          if (isMounted) setLoadingWS(false);
         });
-      return () => { isMounted = false; }; // Cleanup function to avoid state updates on unmounted component
+      return () => { isMounted = false; };
     }
   }, [mode, navigate, id]);
 
@@ -1369,24 +1376,12 @@ export function ViewWorkSheet() {
   const [error, setError] = useState('');
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [showDelete, setShowDelete] = useState(false);
 
   useEffect(() => {
-    let isMounted = true; // Track component mount status
-    fetchWorkSheet(id, navigate)
-      .then(async data => {
-        if (!data) {
-          throw new Error("No data found for the given ID");
-        }
-        // For future use, receiving as geojson
-        /*const detectedCRS = detectCRSFromGeoJSON(data);
-        let normalizedData;
-        if (detectedCRS && detectedCRS.code !== 'EPSG:4326') {
-          normalizedData = await convertGeoJSONToWorksheetWithCRS(data, detectedCRS);
-        } else {
-          normalizedData = convertGeoJSONToWorksheet(data);
-        }*/
-        const normalizedData = normalizeWorksheet(data);
-        normalizedData.id = id;
+    let isMounted = true;
+    fetchWsNorm(id, navigate)
+      .then(normalizedData => {
         setForm(normalizedData);
       })
       .catch(err => {
@@ -1394,11 +1389,9 @@ export function ViewWorkSheet() {
         setError("Failed to load worksheet data. Please try again later.");
       })
       .finally(() => {
-        if (isMounted) {
-          setLoading(false)
-        }
+        if (isMounted) setLoading(false);
       });
-    return () => { isMounted = false; }; // Cleanup function to avoid state updates on unmounted component
+    return () => { isMounted = false; };
   }, [navigate, id]);
 
   if (loading) {
@@ -1454,22 +1447,24 @@ export function ViewWorkSheet() {
               <button
                 className="btn btn-danger"
                 type="button"
-                onClick={() => {
-                  <DeleteWorkSheet
-                    id={id}
-                  />
-                }}
+                onClick={() => setShowDelete(true)}
               >
                 Delete WorkSheet
               </button>
               <button
                 type="button"
                 className="btn btn-success"
-                onClick={() => navigate(`/executionsheet/${id}`)}
+                onClick={() => navigate(`/executionsheet/${id}`, { state: { worksheetData: form } })}
               >
                 View Execution Sheet
               </button>
             </div>
+            {showDelete && (
+              <DeleteWorkSheet
+                worksheetId={id}
+                onClose={() => setShowDelete(false)}
+              />
+            )}
           </form>
         </div>
       </div>
@@ -1532,6 +1527,7 @@ export function ListWorkSheets() {
   const [worksheets, setWorksheets] = useState([]);
   const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState(null); // Track which worksheet is expanded
+  const [showDeleteId, setShowDeleteId] = useState(null);
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
 
@@ -1553,6 +1549,7 @@ export function ListWorkSheets() {
         CheckRequests(request, navigate);
 
         const data = await request.json();
+        console.log("Fetched worksheets data:", data);
         const normalizedWorksheets = data.map(worksheet => {
           // For future use, receiving as geojson
           /*const detectedCRS = detectCRSFromGeoJSON(worksheet);
@@ -1607,70 +1604,70 @@ export function ListWorkSheets() {
             {worksheets.map((worksheet, index) => {
               const expandKey = worksheet.id || worksheet.title || String(index);
               return (
-              <li key={expandKey} style={{ marginBottom: 20, border: '1px solid #ccc', borderRadius: 4 }}>
-                <div
-                  style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', padding: 10 }}
-                  onClick={() => handleExpand(expandKey)}
-                >
-                  <span style={{ flex: 1 }}>Worksheet-{expandKey}</span>
-                  {expandedId === expandKey ? <FaChevronUp /> : <FaChevronDown />}
-                </div>
-                {expandedId === expandKey && (
-                  <div style={{ padding: 10, background: '#f9f9f9' }}>
-                    <div className='worksheet-header-row'>
-                      <h2 className="worksheet-header">WorkSheet Details</h2>
-                      <button
-                        className="btn btn-secondary"
-                        type="button"
-                        onClick={async () => {
-                          const crsCode = window.prompt(
-                            "Enter desired CRS code (e.g., EPSG:4326 for WGS84, EPSG:3763 for Portugal):",
-                            "EPSG:4326"
-                          );
-                          if (!crsCode) return;
-                          // Optionally, you could convert coordinates here if needed
-                          const geojson = await worksheetToGeoJSON(worksheet, crsCode);
-                          const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: "application/geo+json" });
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = `worksheet-${worksheet.id || 'export'}.geojson`;
-                          a.click();
-                          URL.revokeObjectURL(url);
-                        }}
-                      >
-                        Download as GeoJSON
-                      </button>
-                    </div>
-                    <WorksheetDisplay
-                      worksheet={worksheet}
-                      setForm={() => { }}
-                      isViewMode={true}
-                    />
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
-                      <button
-                        className="btn btn-danger"
-                        type="button"
-                        onClick={() => {
-                          <DeleteWorkSheet
-                            id={worksheet.id}
-                          />
-                        }}
-                      >
-                        Delete WorkSheet
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-success"
-                        onClick={() => navigate(`/executionsheet/${worksheet.id}`)}
-                      >
-                        View Execution Sheet
-                      </button>
-                    </div>
+                <li key={expandKey} style={{ marginBottom: 20, border: '1px solid #ccc', borderRadius: 4 }}>
+                  <div
+                    style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', padding: 10 }}
+                    onClick={() => handleExpand(expandKey)}
+                  >
+                    <span style={{ flex: 1 }}>Worksheet-{expandKey}</span>
+                    {expandedId === expandKey ? <FaChevronUp /> : <FaChevronDown />}
                   </div>
-                )}
-              </li>
-              )}
+                  {expandedId === expandKey && (
+                    <div style={{ padding: 10, background: '#f9f9f9' }}>
+                      <div className='worksheet-header-row'>
+                        <h2 className="worksheet-header">WorkSheet Details</h2>
+                        <button
+                          className="btn btn-secondary"
+                          type="button"
+                          onClick={async () => {
+                            const crsCode = window.prompt(
+                              "Enter desired CRS code (e.g., EPSG:4326 for WGS84, EPSG:3763 for Portugal):",
+                              "EPSG:4326"
+                            );
+                            if (!crsCode) return;
+                            // Optionally, you could convert coordinates here if needed
+                            const geojson = await worksheetToGeoJSON(worksheet, crsCode);
+                            const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: "application/geo+json" });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `worksheet-${worksheet.id || 'export'}.geojson`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                          }}
+                        >
+                          Download as GeoJSON
+                        </button>
+                      </div>
+                      <WorksheetDisplay
+                        worksheet={worksheet}
+                        setForm={() => { }}
+                        isViewMode={true}
+                      />
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
+                        <button
+                          className="btn btn-danger"
+                          type="button"
+                          onClick={() => setShowDeleteId(worksheet.id)}
+                        >
+                          Delete WorkSheet
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-success"
+                          onClick={() => navigate(`/executionsheet/${worksheet.id}`, { state: { worksheetData: worksheet } })}
+                        >
+                          View Execution Sheet
+                        </button>
+                      </div>
+                      {showDeleteId === worksheet.id && (
+                        <DeleteWorkSheet worksheetId={worksheet.id} onClose={() => setShowDeleteId(null)} />
+                      )}
+                    </div>
+                  )}
+                </li>
+              )
+            }
             )}
           </ul>
         </div>
@@ -1731,7 +1728,7 @@ function normalizeAigpData(aigpData) {
 }
 
 // Simple normalization function for backward compatibility with existing data
-function normalizeWorksheet(data) {
+export function normalizeWorksheet(data) {
   let featuresArray = [];
   if (Array.isArray(data.features)) {
     featuresArray = data.features;
@@ -2498,15 +2495,17 @@ async function convertGeoJSONToWorksheetWithCRS(geoJsonData, detectedCRS) {
   return convertGeoJSONToWorksheet(convertedGeoJSON);
 }
 
-export function DeleteWorkSheet({ worksheetId }) {
+export function DeleteWorkSheet({ worksheetId, onClose }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
 
   const handleDelete = async () => {
+    setLoading(true);
+    setError('');
     try {
-      const response = await fetch(`/rest/worksheet/${worksheetId}`, {
+      const response = await fetch(`/rest/worksheet/delete/${worksheetId}`, {
         method: 'DELETE',
         headers: {
         }
@@ -2530,21 +2529,423 @@ export function DeleteWorkSheet({ worksheetId }) {
   };
 
   return (
-    <div className="delete-worksheet-container">
-      <h2>Delete WorkSheet</h2>
-      <p>Are you sure you want to delete the worksheet with ID: <strong>{worksheetId}</strong>?</p>
-      <button onClick={handleDelete} className="btn btn-danger">
-        {loading ? (
-          <>
-            Deleting...
-            <span className="spinner" />
-          </>
-        ) : (
-          'Delete WorkSheet'
-        )}
-      </button>
-      {error && <div className="form-error">{error}</div>}
-      {success && <div className="form-success">Worksheet deleted successfully!</div>}
+    <div className="delete-worksheet-container" style={{
+      position: 'fixed',
+      top: 0, left: 0, right: 0, bottom: 0,
+      background: 'rgba(0,0,0,0.3)',
+      zIndex: 1000,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center'
+    }}>
+      <div style={{
+        background: '#fff',
+        padding: 24,
+        borderRadius: 8,
+        minWidth: 320,
+        boxShadow: '0 2px 16px rgba(0,0,0,0.2)',
+        position: 'relative'
+      }}>
+        <button
+          onClick={() => {
+            if (onClose) onClose();
+          }}
+          style={{
+            position: 'absolute',
+            top: 8,
+            right: 8,
+            background: 'transparent',
+            border: 'none',
+            fontSize: 20,
+            cursor: 'pointer'
+          }}
+          aria-label="Close"
+          type="button"
+        >&times;</button>
+        <h2>Delete WorkSheet</h2>
+        <p>Are you sure you want to delete the worksheet with ID: <strong>{worksheetId}</strong>?</p>
+        <button onClick={handleDelete} className="btn btn-danger" disabled={loading || success}>
+          {loading ? (
+            <>
+              Deleting...
+              <span className="spinner" />
+            </>
+          ) : (
+            'Delete WorkSheet'
+          )}
+        </button>
+        {error && <div className="form-error">{error}</div>}
+        {success && <div className="form-success">Worksheet deleted successfully!</div>}
+      </div>
     </div>
+  );
+}
+
+function GenericWorksheetDisplay({ worksheetData, showActions = false, onViewDetails, onClose }) {
+  const navigate = useNavigate();
+
+  return (
+    <div className="generic-worksheet-content">
+      <div className="worksheet-info-grid">
+        <div className="info-row">
+          <span className="info-label">ID:</span>
+          <span className="info-value">{worksheetData.id}</span>
+        </div>
+
+        {worksheetData.title && (
+          <div className="info-row">
+            <span className="info-label">Title:</span>
+            <span className="info-value">{worksheetData.title}</span>
+          </div>
+        )}
+
+        {worksheetData.status && (
+          <div className="info-row">
+            <span className="info-label">Status:</span>
+            <span className={`info-value status-${worksheetData.status.toLowerCase().replace(/\s+/g, '-')}`}>
+              {worksheetData.status}
+            </span>
+          </div>
+        )}
+
+        {worksheetData.starting_date && (
+          <div className="info-row">
+            <span className="info-label">Starting Date:</span>
+            <span className="info-value">{worksheetData.starting_date}</span>
+          </div>
+        )}
+
+        {worksheetData.finishing_date && (
+          <div className="info-row">
+            <span className="info-label">Finishing Date:</span>
+            <span className="info-value">{worksheetData.finishing_date}</span>
+          </div>
+        )}
+
+        {worksheetData.issue_date && (
+          <div className="info-row">
+            <span className="info-label">Issue Date:</span>
+            <span className="info-value">{worksheetData.issue_date}</span>
+          </div>
+        )}
+
+        {worksheetData.award_date && (
+          <div className="info-row">
+            <span className="info-label">Award Date:</span>
+            <span className="info-value">{worksheetData.award_date}</span>
+          </div>
+        )}
+
+        {worksheetData.service_provider_id && (
+          <div className="info-row">
+            <span className="info-label">Service Provider:</span>
+            <span className="info-value">{worksheetData.service_provider_id}</span>
+          </div>
+        )}
+
+        {worksheetData.aigp && Object.keys(worksheetData.aigp).length > 0 && (
+          <div className="info-row">
+            <span className="info-label">AIGP:</span>
+            <div className="info-value">
+              <div className="aigp-list">
+                {Object.keys(worksheetData.aigp).map((aigp, index) => (
+                  <span key={index} className="aigp-tag">
+                    {aigp}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {showActions && (
+        <div className="generic-worksheet-actions">
+          {onViewDetails && (
+            <button
+              className="btn btn-primary btn-small"
+              onClick={() => onViewDetails(worksheetData.id)}
+            >
+              View Full Details
+            </button>
+          )}
+          {onClose && (
+            <button
+              className="btn btn-secondary btn-small"
+              onClick={onClose}
+            >
+              Close
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function GenericListWorkSheets() {
+  const [worksheets, setWorksheets] = useState([]);
+  const [error, setError] = useState('');
+  const [expandedId, setExpandedId] = useState(null);
+  const [expandedData, setExpandedData] = useState(null);
+  const [loadingExpanded, setLoadingExpanded] = useState(false);
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchWorksheets = async () => {
+      try {
+        const request = await fetch("/rest/worksheet/list", {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            status: null,
+            limit: 50, // Increased limit for generic view
+            offset: 0
+          })
+        });
+        CheckRequests(request, navigate);
+
+        const data = await request.json();
+        console.log("Fetched generic worksheets data:", data);
+
+        // For generic list, we only need basic info (ID, title, status)
+        const basicWorksheets = data.map(worksheet => ({
+          id: worksheet.id,
+          title: worksheet.title || '',
+          status: worksheet.status || ''
+        }));
+
+        if (isMounted) {
+          setWorksheets(basicWorksheets);
+        }
+      } catch (err) {
+        if (isMounted) setError('Error fetching worksheets. Please try again later.');
+        console.error(err);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchWorksheets();
+    return () => { isMounted = false; };
+  }, [navigate]);
+
+  const handleExpand = async (id) => {
+    if (expandedId === id) {
+      // Collapse if already expanded
+      setExpandedId(null);
+      setExpandedData(null);
+      return;
+    }
+
+    setExpandedId(id);
+    setLoadingExpanded(true);
+    setExpandedData(null);
+
+    try {
+      // Fetch detailed data using generic endpoint
+      const data = await fetchWorkSheet(id, navigate, true);
+      const normalizedData = {
+        ...data,
+        id: id,
+        aigp: normalizeAigpData(data.aigp)
+      };
+      setExpandedData(normalizedData);
+    } catch (err) {
+      console.error("Error fetching expanded worksheet data:", err);
+      setError("Failed to load worksheet details. Please try again later.");
+      setExpandedId(null);
+    } finally {
+      setLoadingExpanded(false);
+    }
+  };
+
+  const handleViewDetails = (id) => {
+    navigate(`/worksheet/generic-view/${id}`);
+  };
+
+  if (loading) {
+    return (
+      <>
+        {topBar(navigate)}
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Loading Worksheets...</p>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {topBar(navigate)}
+      <div className='worksheet-list-container'>
+        <div className='worksheet-container'>
+          {error && <div className="form-error">{error}</div>}
+          <div className='worksheet-header-row'>
+            <h2 className="worksheet-header">WorkSheets Overview</h2>
+            <div className="worksheet-actions">
+              <span className="worksheet-count">{worksheets.length} worksheets found</span>
+            </div>
+          </div>
+
+          <div className="generic-worksheet-list">
+            {worksheets.length === 0 ? (
+              <div className="no-worksheets">
+                <p>No worksheets found.</p>
+              </div>
+            ) : (
+              <ul className="generic-worksheet-items">
+                {worksheets.map((worksheet) => (
+                  <li key={worksheet.id} className="generic-worksheet-item">
+                    <div
+                      className="worksheet-item-header"
+                      onClick={() => handleExpand(worksheet.id)}
+                    >
+                      <div className="worksheet-item-info">
+                        <span className="worksheet-item-title">
+                          {worksheet.title || `Worksheet ${worksheet.id}`}
+                        </span>
+                        <span className={`worksheet-item-status status-${worksheet.status.toLowerCase().replace(/\s+/g, '-')}`}>
+                          {worksheet.status}
+                        </span>
+                      </div>
+                      <div className="worksheet-item-toggle">
+                        {expandedId === worksheet.id ? <FaChevronUp /> : <FaChevronDown />}
+                      </div>
+                    </div>
+
+                    {expandedId === worksheet.id && (
+                      <div className="worksheet-item-content">
+                        {loadingExpanded ? (
+                          <div className="loading-expanded">
+                            <div className="loading-spinner-small"></div>
+                            <span>Loading details...</span>
+                          </div>
+                        ) : expandedData ? (
+                          <GenericWorksheetDisplay
+                            worksheetData={expandedData}
+                            showActions={true}
+                            onViewDetails={handleViewDetails}
+                            onClose={() => setExpandedId(null)}
+                          />
+                        ) : (
+                          <div className="error-expanded">
+                            Failed to load worksheet details.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+export function GenericViewWorkSheet() {
+  const { id } = useParams();
+  const [worksheetData, setWorksheetData] = useState({
+    id: id,
+    title: '',
+    status: '',
+    starting_date: '',
+    finishing_date: '',
+    issue_date: '',
+    award_date: '',
+    service_provider_id: '',
+    aigp: {}
+  });
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchGenericWorksheet = async () => {
+      try {
+        const data = await fetchWorkSheet(id, navigate, true); // Use generic endpoint
+        if (isMounted) {
+          setWorksheetData({
+            ...data,
+            id: id,
+            aigp: normalizeAigpData(data.aigp)
+          });
+        }
+      } catch (err) {
+        console.error("Error fetching worksheet:", err);
+        if (isMounted) {
+          setError("Failed to load worksheet data. Please try again later.");
+        }
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    fetchGenericWorksheet();
+    return () => { isMounted = false; };
+  }, [navigate, id]);
+
+  if (loading) {
+    return (
+      <>
+        {topBar(navigate)}
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Loading WorkSheet...</p>
+        </div>
+      </>
+    );
+  }
+
+  if (error) {
+    return (
+      <>
+        {topBar(navigate)}
+        <div className='worksheet-form-container'>
+          <div className='worksheet-container'>
+            <div className="form-error">{error}</div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {topBar(navigate)}
+      <div className='worksheet-form-container'>
+        <div className='worksheet-container'>
+          <div className="generic-worksheet-view">
+            <div className='worksheet-header-row'>
+              <h2 className="worksheet-header">WorkSheet Overview</h2>
+              <div className="worksheet-actions">
+                <button
+                  className="btn btn-secondary"
+                  type="button"
+                  onClick={() => navigate(-1)}
+                >
+                  Back
+                </button>
+              </div>
+            </div>
+
+            <GenericWorksheetDisplay worksheetData={worksheetData} />
+          </div>
+        </div>
+      </div>
+    </>
   );
 }

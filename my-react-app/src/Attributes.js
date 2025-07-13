@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { topBar } from './TopBar';
 import CheckRequests from './CheckRequests';
 import './AuthForm.css';
+import './ProfileView.css';
 import roles from './roles'; // Assuming roles.js exports the roles object
 
 async function fetchAttributes(navigate, username) {
@@ -13,7 +14,14 @@ async function fetchAttributes(navigate, username) {
   });
   CheckRequests(response, navigate);
   const data = await response.json();
-  return data;
+  // Normalize keys: remove 'user_' prefix except for 'username'
+  const normalized = Object.fromEntries(
+    Object.entries(data).map(([key, value]) => {
+      if (key === "username") return [key, value];
+      return [key.startsWith("user_") ? key.slice(5) : key, value];
+    })
+  );
+  return normalized;
 };
 
 const attributesForms = ({
@@ -41,8 +49,8 @@ const attributesForms = ({
           className="form-input"
           id="name"
           type="text"
-          name="user_name"
-          value={attributes.user_name}
+          name="name"
+          value={attributes.name}
           onChange={changeData}
           autoComplete="name"
         />
@@ -52,30 +60,30 @@ const attributesForms = ({
           className="form-input"
           id="email"
           type="email"
-          name="user_email"
-          value={attributes.user_email}
+          name="email"
+          value={attributes.email}
           onChange={changeData}
           autoComplete="email"
         />
 
-        <label className="form-label" htmlFor="telephone1">Phone Number:</label>
+        <label className="form-label" htmlFor="phone1">Phone Number:</label>
         <input
           className='form-input'
-          id="telephone1"
+          id="phone1"
           type="tel"
-          name="user_phone1"
-          value={attributes.user_phone1}
+          name="phone1"
+          value={attributes.phone1}
           onChange={changeData}
           autoComplete="tel"
         />
 
-        <label className="form-label" htmlFor="telephone2">Secondary Phone Number:</label>
+        <label className="form-label" htmlFor="phone2">Secondary Phone Number:</label>
         <input
           className="form-input"
-          id="telephone2"
+          id="phone2"
           type="tel"
-          name="user_phone2"
-          value={attributes.user_phone2}
+          name="phone2"
+          value={attributes.phone2}
           onChange={changeData}
           autoComplete="tel"
         />
@@ -84,8 +92,8 @@ const attributesForms = ({
         <select
           className="form-input"
           id="profile"
-          name="user_profile"
-          value={attributes.user_profile}
+          name="profile"
+          value={attributes.profile}
           onChange={changeData}
         >
           <option value="PUBLICO">Public</option>
@@ -96,8 +104,8 @@ const attributesForms = ({
         <select
           className="form-input"
           id="role"
-          name="user_role"
-          value={attributes.user_role}
+          name="role"
+          value={attributes.role}
           onChange={changeData}
         >
           {Object.entries(roles)
@@ -113,8 +121,8 @@ const attributesForms = ({
         <select
           className="form-input"
           id="account_state"
-          name="user_account_state"
-          value={attributes.user_account_state}
+          name="account_state"
+          value={attributes.account_state}
           onChange={changeData}
         >
           <option value="ATIVADO">Activated</option>
@@ -127,8 +135,8 @@ const attributesForms = ({
           className="form-input"
           id="nif"
           type="text"
-          name="user_nif"
-          value={attributes.user_nif}
+          name="nif"
+          value={attributes.nif}
           onChange={changeData}
           autoComplete="nif"
         />
@@ -138,8 +146,8 @@ const attributesForms = ({
           className="form-input"
           id="employer"
           type="text"
-          name="user_employer"
-          value={attributes.user_employer}
+          name="employer"
+          value={attributes.employer}
           onChange={changeData}
           autoComplete="employer"
         />
@@ -149,8 +157,8 @@ const attributesForms = ({
           className="form-input"
           id="job"
           type="text"
-          name="user_job"
-          value={attributes.user_job}
+          name="job"
+          value={attributes.job}
           onChange={changeData}
           autoComplete="job"
         />
@@ -160,8 +168,8 @@ const attributesForms = ({
           className="form-input"
           id="address"
           type="text"
-          name="user_address"
-          value={attributes.user_address}
+          name="address"
+          value={attributes.address}
           onChange={changeData}
           autoComplete="address"
         />
@@ -171,8 +179,8 @@ const attributesForms = ({
           className="form-input"
           id="postal_code"
           type="text"
-          name="user_postal_code"
-          value={attributes.user_postal_code}
+          name="postal_code"
+          value={attributes.postal_code}
           onChange={changeData}
           autoComplete="postal_code"
         />
@@ -182,8 +190,8 @@ const attributesForms = ({
           className="form-input"
           id="company_nif"
           type="text"
-          name="user_company_nif"
-          value={attributes.user_company_nif}
+          name="company_nif"
+          value={attributes.company_nif}
           onChange={changeData}
           autoComplete="company_nif"
         />
@@ -193,8 +201,8 @@ const attributesForms = ({
           className="form-input"
           id="photo_url"
           type="text"
-          name="user_photo_url"
-          value={attributes.user_photo_url}
+          name="photo_url"
+          value={attributes.photo_url}
           onChange={changeData}
           autoComplete="photo_url"
         />
@@ -204,8 +212,8 @@ const attributesForms = ({
           className="form-input"
           id="cc"
           type="text"
-          name="user_cc"
-          value={attributes.user_cc}
+          name="cc"
+          value={attributes.cc}
           onChange={changeData}
           autoComplete="cc"
         />
@@ -215,8 +223,8 @@ const attributesForms = ({
           className="form-input"
           id="cc_issue_date"
           type="date"
-          name="user_cc_issue_date"
-          value={attributes.user_cc_issue_date}
+          name="cc_issue_date"
+          value={attributes.cc_issue_date}
           onChange={changeData}
           autoComplete="cc_issue_date"
         />
@@ -226,8 +234,8 @@ const attributesForms = ({
           className="form-input"
           id="cc_issue_place"
           type="text"
-          name="user_cc_issue_place"
-          value={attributes.user_cc_issue_place}
+          name="cc_issue_place"
+          value={attributes.cc_issue_place}
           onChange={changeData}
           autoComplete="cc_issue_place"
         />
@@ -237,8 +245,8 @@ const attributesForms = ({
           className="form-input"
           id="cc_validity"
           type="date"
-          name="user_cc_validity"
-          value={attributes.user_cc_validity}
+          name="cc_validity"
+          value={attributes.cc_validity}
           onChange={changeData}
           autoComplete="cc_validity"
         />
@@ -248,8 +256,8 @@ const attributesForms = ({
           className="form-input"
           id="birth_date"
           type="date"
-          name="user_birth_date"
-          value={attributes.user_birth_date}
+          name="birth_date"
+          value={attributes.birth_date}
           onChange={changeData}
           autoComplete="birth_date"
         />
@@ -259,8 +267,8 @@ const attributesForms = ({
           className="form-input"
           id="nationality"
           type="text"
-          name="user_nationality"
-          value={attributes.user_nationality}
+          name="nationality"
+          value={attributes.nationality}
           onChange={changeData}
           autoComplete="nationality"
         />
@@ -269,30 +277,84 @@ const attributesForms = ({
           className="form-input"
           id="residence_country"
           type="text"
-          name="user_residence_country"
-          value={attributes.user_residence_country}
+          name="residence_country"
+          value={attributes.residence_country}
           onChange={changeData}
           autoComplete="residence_country"
         />
       </div>
-      <button 
-        className="btn btn-primary btn-large" 
+      <button
+        className="btn btn-primary btn-large"
         type="submit"
         disabled={loading}
       >
         {loading ? (
           <>
             Submitting...
-            <span className="spinner"/>
+            <span className="spinner" />
           </>
         ) : (
-        'Submit'
+          'Submit'
         )}
       </button>
     </form>
   );
 };
 
+const ProfileView = ({ attributes, onEdit, onChangePassword, onToggleProfile }) => (
+  <div className="profile-view">
+    <div className="profile-header">
+      <img
+        src={attributes.photo_url || "https://ui-avatars.com/api/?name=" + (attributes.name || attributes.username)}
+        alt="Profile"
+        className="profile-photo"
+      />
+      <div>
+        <h2>{attributes.name || attributes.username}</h2>
+        <p className="profile-username">@{attributes.username}</p>
+        <p className="profile-role">{attributes.role}</p>
+      </div>
+    </div>
+    <div className="profile-details">
+      <div><strong>Email:</strong> {attributes.email}</div>
+      <div><strong>Phone:</strong> {attributes.phone1}</div>
+      {attributes.phone2 && <div><strong>Secondary Phone:</strong> {attributes.phone2}</div>}
+      <div><strong>Profile:</strong> {attributes.profile}</div>
+      <div><strong>Account State:</strong> {attributes.account_state}</div>
+      <div><strong>NIF:</strong> {attributes.nif}</div>
+      <div><strong>Employer:</strong> {attributes.employer}</div>
+      <div><strong>Job:</strong> {attributes.job}</div>
+      <div><strong>Address:</strong> {attributes.address}</div>
+      <div><strong>Postal Code:</strong> {attributes.postal_code}</div>
+      <div><strong>Company NIF:</strong> {attributes.company_nif}</div>
+      <div><strong>CC:</strong> {attributes.cc}</div>
+      <div><strong>CC Issue Date:</strong> {attributes.cc_issue_date}</div>
+      <div><strong>CC Issue Place:</strong> {attributes.cc_issue_place}</div>
+      <div><strong>CC Validity:</strong> {attributes.cc_validity}</div>
+      <div><strong>Birth Date:</strong> {attributes.birth_date}</div>
+      <div><strong>Nationality:</strong> {attributes.nationality}</div>
+      <div><strong>Residence Country:</strong> {attributes.residence_country}</div>
+    </div>
+    <div style={{ display: "flex", gap: "1rem", marginTop: "1.5rem" }}>
+      <button className="btn btn-primary btn-large" onClick={onEdit}>
+        Edit Attributes
+      </button>
+      {onChangePassword && (
+        <button className="btn btn-warning btn-large" onClick={onChangePassword}>
+          Change Password
+        </button>
+      )}
+      {/* Toggle visibility button for RU role */}
+      {onToggleProfile && (
+        <button className="btn btn-secondary btn-large" onClick={onToggleProfile}>
+          {attributes.profile === "PUBLICO" ? "Set Private" : "Set Public"}
+        </button>
+      )}
+    </div>
+  </div>
+);
+
+// Main Attributes component, supports both self and admin mode
 export function Attributes() {
   const navigate = useNavigate();
   const [attributes, setAttributes] = useState([]);
@@ -301,8 +363,14 @@ export function Attributes() {
   const [success, setSuccess] = useState(false);
   const [loadingUser, setLoadingUser] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [editing, setEditing] = useState(false);
 
-  const { username } = JSON.parse(sessionStorage.getItem('userInfo') || {});
+  const { user } = useParams(); // Use 'id' instead of 'entry'
+
+  // If username is provided, use it as the username to fetch/edit, else use session user
+  const sessionUser = JSON.parse(sessionStorage.getItem('userInfo') || {});
+  const username = user || sessionUser.username;
+
   useEffect(() => {
     let isMounted = true;
     fetchAttributes(navigate, username)
@@ -319,7 +387,7 @@ export function Attributes() {
         }
       });
     return () => {
-      isMounted = false; // Cleanup to prevent state updates if unmounted
+      isMounted = false;
     }
   }, [navigate, username]);
 
@@ -347,8 +415,12 @@ export function Attributes() {
     setSuccess(false);
     setLoading(true);
 
+    // Remove 'user_' prefix from keys except 'username'
     const stringAttributes = Object.fromEntries(
-      Object.entries(attributes).map(([key, value]) => [key, String(value)])
+      Object.entries(attributes).map(([key, value]) => {
+        if (key === "username") return [key, String(value)];
+        return [key.startsWith("user_") ? key.slice(5) : key, String(value)];
+      })
     );
 
     try {
@@ -366,6 +438,7 @@ export function Attributes() {
       if (response.ok) {
         setInitialAttributes(attributes);
         setSuccess(true);
+        setEditing(false);
       } else {
         setError("Failed to update attributes. Please try again later.");
         setAttributes(initialAttributes);
@@ -380,21 +453,86 @@ export function Attributes() {
     }
   };
 
+  // Handler for toggling public/private profile
+  const handleToggleProfile = async () => {
+    const newProfile = attributes.profile === "PUBLICO" ? "PRIVADO" : "PUBLICO";
+    setLoading(true);
+    try {
+      // Remove 'user_' prefix from keys except 'username'
+      const attrNoPrefix = Object.fromEntries(
+        Object.entries({ ...attributes, user_profile: newProfile }).map(([key, value]) => {
+          if (key === "username") return [key, String(value)];
+          return [key.startsWith("user_") ? key.slice(5) : key, String(value)];
+        })
+      );
+      const response = await fetch('/rest/utils/changeattributes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          targetUsername: username,
+          attributes: attrNoPrefix
+        })
+      });
+      if (response.ok) {
+        // Refresh attributes from backend to ensure consistency
+        const updated = await fetchAttributes(navigate, username);
+        setAttributes(updated);
+        setInitialAttributes(updated);
+        setSuccess(true);
+      } else {
+        setError("Failed to update profile visibility.");
+      }
+    } catch (error) {
+      setError("An error occurred while updating profile visibility.");
+    }
+    setLoading(false);
+  };
+
   return (
     <>
       {topBar(navigate)}
       <div className="AuthForm">
         <header className="AuthForm-header">
-          
           {error && <p className="error">{error}</p>}
-          <p>Edit your account</p>
-          {attributesForms({
-            attributes,
-            changeData,
-            handleSubmit,
-            loading
-          })}
-          {success && <p className="success">Attributes updated successfully!</p>}
+          <p>Profile</p>
+          {!editing ? (
+            <ProfileView
+              attributes={attributes}
+              onEdit={() => setEditing(true)}
+              onChangePassword={!user ? () => navigate('/user/changePassword') : undefined}
+              // Show toggle only for self and RU role
+              onToggleProfile={
+                !user && attributes.role === "RU"
+                  ? handleToggleProfile
+                  : undefined
+              }
+            />
+          ) : (
+            <>
+              {attributesForms({
+                attributes,
+                changeData,
+                handleSubmit,
+                loading
+              })}
+              <button
+                className="btn btn-secondary"
+                type="button"
+                style={{ marginTop: "1rem" }}
+                onClick={() => {
+                  setAttributes(initialAttributes);
+                  setEditing(false);
+                  setError('');
+                  setSuccess(false);
+                }}
+              >
+                Cancel
+              </button>
+              {success && <p className="success">Attributes updated successfully!</p>}
+            </>
+          )}
         </header>
       </div>
     </>
@@ -506,10 +644,10 @@ export function ChangePassword() {
               {loading ? (
                 <>
                   Changing password...
-                  <span className="spinner"/>
+                  <span className="spinner" />
                 </>
               ) : (
-              'Change Password'
+                'Change Password'
               )}
             </button>
           </form>
@@ -603,18 +741,18 @@ export function ChangeState() {
               <option value="INATIVO">DEACTIVATED</option>
             </select>
 
-            <button 
-              className="btn btn-primary btn-large" 
+            <button
+              className="btn btn-primary btn-large"
               type="submit"
               disabled={loading}
             >
               {loading ? (
                 <>
                   Changing state...
-                  <span className="spinner"/>
+                  <span className="spinner" />
                 </>
               ) : (
-              'Change State'
+                'Change State'
               )}
             </button>
           </form>
@@ -706,18 +844,18 @@ export function ChangeRole() {
                   ))}
               </select>
               {success && <p className="success">Role changed successfully!</p>}
-              <button 
-                className="btn btn-primary btn-large" 
+              <button
+                className="btn btn-primary btn-large"
                 type="submit"
                 disabled={loading}
               >
                 {loading ? (
                   <>
                     Changing role...
-                    <span className="spinner"/>
+                    <span className="spinner" />
                   </>
                 ) : (
-                'Change Role'
+                  'Change Role'
                 )}
               </button>
             </form>
