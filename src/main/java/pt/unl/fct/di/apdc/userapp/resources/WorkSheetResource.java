@@ -240,7 +240,6 @@ public class WorkSheetResource {
         Set<String> generalFields = Set.of(
                 "id", "title", "aigp","status", "issue_date", "award_date",
                 "starting_date", "finishing_date", "service_provider_id");
-        
         Map<String, Object> detailedData = new HashMap<>();
         for (String name : entity.getNames()) {
         	if (generalFields.contains(name)) {detailedData.put(name, entity.getValue(name).get());}

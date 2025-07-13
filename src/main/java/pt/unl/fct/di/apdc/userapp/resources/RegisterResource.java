@@ -78,7 +78,7 @@ public class RegisterResource {
             txn.put(userBuilder.build());
             txn.commit();
             LOG.info("Conta registada com sucesso: " + data.username);
-            return Response.ok().build();
+            return Response.ok().entity("OK").build();
 
         } catch (DatastoreException e) {
             LOG.log(Level.SEVERE, e.toString());
