@@ -22,6 +22,7 @@ import com.google.cloud.datastore.Query;
 import com.google.cloud.datastore.QueryResults;
 import com.google.cloud.datastore.StringValue;
 import com.google.cloud.datastore.StructuredQuery;
+import com.google.cloud.datastore.Transaction;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
@@ -41,6 +42,7 @@ import jakarta.ws.rs.core.Cookie;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.Response.Status;
+import pt.unl.fct.di.apdc.userapp.util.EditWorkSheetRequest;
 import pt.unl.fct.di.apdc.userapp.util.FilterRequest;
 import pt.unl.fct.di.apdc.userapp.util.JWTToken;
 import pt.unl.fct.di.apdc.userapp.util.Roles;
@@ -179,23 +181,83 @@ public class WorkSheetResource {
            return Response.status(Response.Status.UNAUTHORIZED)
                    .entity("{\"message\":\"Failed to decode token.\"}").build();
     	}
+    	
     	String requesterRole = jwt.getClaim("role").asString();
+    	if (!Roles.SMBO.equalsIgnoreCase(requesterRole) && !Roles.SGVBO.equalsIgnoreCase(requesterRole) && !Roles.SDVBO.equalsIgnoreCase(requesterRole)) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Not authorized to view this worksheet.\"}").build();
+     	}
+    	
+        Key key = datastore.newKeyFactory().setKind("WorkSheet").newKey(id);
+        Entity entity = datastore.get(key);
+
+        if (entity == null)
+            return Response.status(Response.Status.NOT_FOUND).entity("{\"error\":\"Not found\"}").build();
+        
+        boolean isSGVBO = Roles.SGVBO.equalsIgnoreCase(requesterRole);
+        
+        Set<String> generalFields = Set.of(
+                "id", "title", "aigp","status", "issue_date", "award_date",
+                "starting_date", "finishing_date", "service_provider_id"
+            );
+
+        Map<String, Object> data = new HashMap<>();
+        for (String name : entity.getNames()) {
+            if (isSGVBO && !Set.of("title", "status", "issue_date", "created_at", "starting_date", "finishing_date").contains(name)) continue;
+            if (generalFields.contains(name)) {data.put(name, entity.getValue(name).get());}
+        }
+
+        return Response.ok(g.toJson(data)).build();
+    }
+    
+    @GET
+    @Path("/viewDetailed/{id}")
+    public Response viewWorksheetDetailed(@PathParam("id") String id, @CookieParam("session::apdc") Cookie cookie, @HeaderParam("Authorization") String authHeader) {
+    	String token = extractJWT(cookie, authHeader);
+    	if (token == null || !JWTToken.validateJWT(token)) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Invalid or expired session.\"}").build();
+        }
+    	
+    	DecodedJWT jwt = JWTToken.extractJWT(token);
+    	if (jwt == null) {
+           return Response.status(Response.Status.UNAUTHORIZED)
+                   .entity("{\"message\":\"Failed to decode token.\"}").build();
+    	}
+    	
+    	String requesterRole = jwt.getClaim("role").asString();
+    	if (!Roles.SMBO.equalsIgnoreCase(requesterRole) && !Roles.SDVBO.equalsIgnoreCase(requesterRole)) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Not authorized to view this worksheet.\"}").build();
+     	}
 
         Key key = datastore.newKeyFactory().setKind("WorkSheet").newKey(id);
         Entity entity = datastore.get(key);
 
         if (entity == null)
             return Response.status(Response.Status.NOT_FOUND).entity("{\"error\":\"Not found\"}").build();
-
-        boolean isSGVBO = Roles.SGVBO.equalsIgnoreCase(requesterRole);
-
-        Map<String, Object> data = new HashMap<>();
+        
+        Set<String> generalFields = Set.of(
+                "id", "title", "aigp","status", "issue_date", "award_date",
+                "starting_date", "finishing_date", "service_provider_id");
+        
+        Map<String, Object> detailedData = new HashMap<>();
         for (String name : entity.getNames()) {
-            if (isSGVBO && !Set.of("title", "status", "issue_date", "created_at").contains(name)) continue;
-            data.put(name, entity.getValue(name).get());
+        	if (generalFields.contains(name)) {detailedData.put(name, entity.getValue(name).get());}
         }
 
-        return Response.ok(g.toJson(data)).build();
+        try {
+        	if (entity.contains("features")) {
+                detailedData.put("features", g.fromJson(entity.getString("features"), List.class));
+            }
+        	if (entity.contains("operations")) {
+                detailedData.put("operations", g.fromJson(entity.getString("operations"), List.class));
+            }
+        } catch (Exception e) {
+            LOG.warning("Error parsing complex fields: " + e.getMessage());
+        }
+        
+        return Response.ok(g.toJson(detailedData)).build();
     }
 
     @POST
@@ -271,6 +333,56 @@ public class WorkSheetResource {
         datastore.put(updated);
 
         return Response.ok("{\"message\":\"Status updated.\"}").build();
+    }
+    
+    @POST
+    @Path("/edit")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response editWorksheet(EditWorkSheetRequest request,
+                                @CookieParam("session::apdc") Cookie cookie,
+                                @HeaderParam("Authorization") String authHeader) {
+    	
+        String token = extractJWT(cookie, authHeader);
+        if (token == null || !JWTToken.validateJWT(token)) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Invalid or expired session.\"}").build();
+        }
+
+        DecodedJWT jwt = JWTToken.extractJWT(token);
+        String requesterUsername = jwt.getSubject();
+        String requesterRole = jwt.getClaim("role").asString();
+        Map<String, String> newAttributes = request.attributesEdited;
+
+        if (!Roles.SMBO.equalsIgnoreCase(requesterRole)) {
+            return Response.status(Status.FORBIDDEN).entity("{\"message\":\"Only SMBO can edit worksheets.\"}").build();}
+
+        Key key = datastore.newKeyFactory().setKind("WorkSheet").newKey(request.id);
+        Entity ws = datastore.get(key);
+        if (ws == null) {
+            return Response.status(Status.NOT_FOUND).entity("{\"message\":\"Worksheet not found.\"}").build();}
+        
+        Transaction txn = datastore.newTransaction();
+        try {
+            Entity.Builder builder = Entity.newBuilder(ws);
+            if (request.attributesEdited != null) {
+                for (Map.Entry<String, String> entry : request.attributesEdited.entrySet()) {
+                    builder.set(entry.getKey(), entry.getValue());
+                }
+            }
+            
+            datastore.put(builder.build());
+            txn.commit();
+            LOG.info("Attributes for worksheet " + ws + " updated by " + requesterUsername);
+            return Response.ok("{\"message\":\"Attributes updated successfully.\"}").build();
+        } catch (Exception e) {
+            txn.rollback();
+            return Response.status(Status.INTERNAL_SERVER_ERROR)
+                    .entity("{\"message\":\"Error updating attributes: " + e.getMessage() + "\"}").build();
+        } finally {
+            if (txn.isActive()) txn.rollback();
+        }
+        
     }
 
     @DELETE
