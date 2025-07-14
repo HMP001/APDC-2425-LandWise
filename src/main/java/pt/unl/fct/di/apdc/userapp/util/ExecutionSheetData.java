@@ -27,6 +27,7 @@ public class ExecutionSheetData {
     }
 
     public static class PolygonOperation {
+        public String operator_username;
         public String operation_code;
         public String status; // unassigned, assigned, ongoing, completed
         public String starting_date;

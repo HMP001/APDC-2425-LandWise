@@ -67,6 +67,71 @@ public class ExecutionSheetResource {
                                          @HeaderParam("Authorization") String authHeader,
                                          ExecutionSheetData data) {
         String token = extractJWT(cookie, authHeader);
+        if (token == null || !JWTToken.validateJWT(token))
+            return unauthorized("Invalid session");
+    
+        DecodedJWT jwt = JWTToken.extractJWT(token);
+        if (jwt == null)
+            return unauthorized("Failed to decode token");
+    
+        String role = jwt.getClaim("role").asString();
+        String userId = jwt.getSubject();
+    
+        if (!Roles.PRBO.equalsIgnoreCase(role))
+            return forbidden("Only PRBO can create execution sheets");
+    
+        if (data == null || !data.valid())
+            return Response.status(Response.Status.BAD_REQUEST)
+                .entity("{\"error\":\"Invalid or incomplete execution sheet data\"}").build();
+    
+        // Obter folha de obra
+        Key wsKey = datastore.newKeyFactory().setKind("WorkSheet").newKey(data.worksheet_id);
+        Entity worksheet = datastore.get(wsKey);
+        if (worksheet == null)
+            return Response.status(Response.Status.NOT_FOUND)
+                .entity("{\"error\":\"Worksheet not found\"}").build();
+    
+        // Obter o service_provider_id do utilizador (PRBO)
+        Key userKey = datastore.newKeyFactory().setKind("User").newKey(userId);
+        Entity userEntity = datastore.get(userKey);
+        if (userEntity == null || !userEntity.contains("user_employer"))
+            return Response.status(Response.Status.BAD_REQUEST)
+                .entity("{\"error\":\"User does not have an associated service provider.\"}").build();
+    
+        String providerFromUser = userEntity.getString("user_employer");
+        String providerFromWS = worksheet.getString("service_provider_id");
+    
+        if (!providerFromWS.equals(providerFromUser))
+            return forbidden("You cannot create execution sheets for worksheets not assigned to your provider.");
+    
+        // Criar folha de execução
+        String executionId = data.worksheet_id + "-" + UUID.randomUUID();
+        Key execKey = datastore.newKeyFactory().setKind("ExecutionSheet").newKey(executionId);
+    
+        Entity.Builder builder = Entity.newBuilder(execKey)
+            .set("worksheet_id", data.worksheet_id)
+            .set("created_by", userId)
+            .set("created_at", System.currentTimeMillis())
+            .set("status", "por_atribuir")
+            .set("starting_date", nvl(data.starting_date))
+            .set("finishing_date", nvl(data.finishing_date, ""))
+            .set("last_activity_date", nvl(data.last_activity_date, ""))
+            .set("observations", nvl(data.observations, ""))
+            .set("operations", g.toJson(data.operations))
+            .set("polygons_operations", StringValue.newBuilder(g.toJson(data.polygons_operations)).setExcludeFromIndexes(true).build());
+    
+        datastore.put(builder.build());
+    
+        return Response.ok("{\"message\":\"Execution sheet created.\"}").build();
+    }
+    
+    @POST
+    @Path("/assign")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response assignOperationToOperator(@CookieParam("session::apdc") Cookie cookie,
+                                            @HeaderParam("Authorization") String authHeader,
+                                            ExecutionSheetData data) {
+        String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token)) return unauthorized("Invalid session");
 
         DecodedJWT jwt = JWTToken.extractJWT(token);
@@ -74,78 +139,81 @@ public class ExecutionSheetResource {
 
         String role = jwt.getClaim("role").asString();
         String userId = jwt.getSubject();
-        if (!Roles.PRBO.equalsIgnoreCase(role))
-            return forbidden("Only PRBO can create execution sheets");
 
-        if (data == null || !data.valid())
-            return Response.status(Response.Status.BAD_REQUEST).entity("{\"error\":\"Invalid or incomplete execution sheet data\"}").build();
-
-        Key wsKey = datastore.newKeyFactory().setKind("WorkSheet").newKey(data.worksheet_id);
-        Entity worksheet = datastore.get(wsKey);
-        if (worksheet == null)
-            return Response.status(Response.Status.NOT_FOUND).entity("{\"error\":\"Worksheet not found\"}").build();
-
-        String executionId = data.worksheet_id + "-" + UUID.randomUUID();
-        Key execKey = datastore.newKeyFactory().setKind("ExecutionSheet").newKey(executionId);
-
-        Entity.Builder builder = Entity.newBuilder(execKey)
-                .set("worksheet_id", data.worksheet_id)
-                .set("created_by", userId)
-                .set("created_at", System.currentTimeMillis())
-                .set("status", "por_atribuir")
-                .set("starting_date", nvl(data.starting_date))
-                .set("finishing_date", nvl(data.finishing_date, ""))
-                .set("last_activity_date", nvl(data.last_activity_date, ""))
-                .set("observations", nvl(data.observations, ""))
-                .set("operations", g.toJson(data.operations))
-                .set("polygons_operations", StringValue.newBuilder(g.toJson(data.polygons_operations)).setExcludeFromIndexes(true).build());
-
-        datastore.put(builder.build());
-
-        return Response.ok("{\"message\":\"Execution sheet created.\"}").build();
-    }
-
-    @POST
-    @Path("/assign")
-    @Consumes(MediaType.APPLICATION_JSON)
-    public Response assignOperationToOperator(@CookieParam("session::apdc") Cookie cookie,
-                                              @HeaderParam("Authorization") String authHeader,
-                                              ExecutionSheetData data) {
-        String token = extractJWT(cookie, authHeader);
-        if (token == null || !JWTToken.validateJWT(token)) return unauthorized("Invalid session");
-    
-        DecodedJWT jwt = JWTToken.extractJWT(token);
-        if (jwt == null) return unauthorized("Failed to decode token");
-    
-        String role = jwt.getClaim("role").asString();
         if (!Roles.PRBO.equalsIgnoreCase(role))
             return forbidden("Only PRBO can assign operations");
-    
-        if (data == null || data.polygons_operations == null) {
+
+        if (data == null || data.polygons_operations == null)
             return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("{\"error\":\"Invalid execution sheet data\"}").build();
-        }
-    
+                .entity("{\"error\":\"Invalid execution sheet data\"}").build();
+
+        // Validar que o PRBO está a trabalhar sobre uma folha da sua entidade
+        Entity userEntity = datastore.get(datastore.newKeyFactory().setKind("User").newKey(userId));
+        if (userEntity == null || !userEntity.contains("user_employer"))
+            return Response.status(Response.Status.BAD_REQUEST)
+                .entity("{\"error\":\"PRBO does not have an associated employer.\"}").build();
+
+        String employer = userEntity.getString("user_employer");
+
+        Entity worksheet = datastore.get(datastore.newKeyFactory().setKind("WorkSheet").newKey(data.worksheet_id));
+        if (worksheet == null)
+            return Response.status(Response.Status.NOT_FOUND)
+                .entity("{\"error\":\"Worksheet not found\"}").build();
+
+        String worksheetProvider = worksheet.getString("service_provider_id");
+        if (!employer.equals(worksheetProvider))
+            return forbidden("You cannot assign operations for a worksheet outside your organization.");
+
+        // Ciclo de atribuição
         for (ExecutionSheetData.PolygonOperations poly : data.polygons_operations) {
             int polygonId = poly.polygon_id;
             for (ExecutionSheetData.PolygonOperation op : poly.operations) {
+
+                // Validar operador
+                if (op.operator_username == null || op.operator_username.isBlank()) {
+                    return Response.status(Response.Status.BAD_REQUEST)
+                        .entity("{\"error\":\"Missing operator_username for assignment.\"}").build();
+                }
+
+                // Procurar utilizador pelo username (como Key)
+                Key operatorKey = datastore.newKeyFactory().setKind("User").newKey(op.operator_username);
+                Entity operator = datastore.get(operatorKey);
+
+                if (operator == null) {
+                    return Response.status(Response.Status.BAD_REQUEST)
+                        .entity("{\"error\":\"Operator username not found: " + op.operator_username + "\"}").build();
+                }
+
+                if (!Roles.PO.equalsIgnoreCase(operator.getString("user_role"))) {
+                    return Response.status(Response.Status.BAD_REQUEST)
+                        .entity("{\"error\":\"User '" + op.operator_username + "' is not a PO.\"}").build();
+                }
+
+                if (!operator.getString("user_employer").equals(employer)) {
+                    return forbidden("Cannot assign operator '" + op.operator_username + "' outside your organization.");
+                }
+
+                // Criar entidade de atribuição
                 String compositeKey = data.worksheet_id + ":" + op.operation_code + ":" + polygonId;
                 Key key = datastore.newKeyFactory().setKind("ExecutionAssignment").newKey(compositeKey);
-    
+
                 Entity entity = Entity.newBuilder(key)
-                        .set("worksheet_id", data.worksheet_id)
-                        .set("operation_code", op.operation_code)
-                        .set("polygon_id", polygonId)
-                        .set("status", op.status != null ? op.status : "atribuido")
-                        .set("assigned_at", System.currentTimeMillis())
-                        .build();
-    
+                    .set("worksheet_id", data.worksheet_id)
+                    .set("operation_code", op.operation_code)
+                    .set("polygon_id", polygonId)
+                    .set("operator_username", op.operator_username)
+                    .set("status", op.status != null ? op.status : "atribuido")
+                    .set("assigned_at", System.currentTimeMillis())
+                    .build();
+
                 datastore.put(entity);
             }
         }
-    
+
         return Response.ok("{\"message\":\"Assignments saved.\"}").build();
     }
+
+
     
     @POST
     @Path("/startActivity")
@@ -393,95 +461,95 @@ public class ExecutionSheetResource {
     
 
     @GET
-    @Path("/export/{worksheetId}")
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response exportExecutionSheet(@PathParam("worksheetId") String worksheetId,
-                                        @CookieParam("session::apdc") Cookie cookie,
-                                        @HeaderParam("Authorization") String authHeader) {
-        String token = extractJWT(cookie, authHeader);
-        if (token == null || !JWTToken.validateJWT(token)) return unauthorized("Invalid session");
+@Path("/export/{worksheetId}")
+@Produces(MediaType.APPLICATION_JSON)
+public Response exportExecutionSheet(@PathParam("worksheetId") String worksheetId,
+                                     @CookieParam("session::apdc") Cookie cookie,
+                                     @HeaderParam("Authorization") String authHeader) {
+    String token = extractJWT(cookie, authHeader);
+    if (token == null || !JWTToken.validateJWT(token)) return unauthorized("Invalid session");
 
-        DecodedJWT jwt = JWTToken.extractJWT(token);
-        if (jwt == null) return unauthorized("Failed to decode token");
+    DecodedJWT jwt = JWTToken.extractJWT(token);
+    if (jwt == null) return unauthorized("Failed to decode token");
 
-        if (!Roles.SDVBO.equalsIgnoreCase(jwt.getClaim("role").asString()))
-            return forbidden("Only SDVBO can export");
+    if (!Roles.SDVBO.equalsIgnoreCase(jwt.getClaim("role").asString()))
+        return forbidden("Only SDVBO can export");
 
-        Query<Entity> query = Query.newEntityQueryBuilder()
-            .setKind("ExecutionActivity")
-            .setFilter(StructuredQuery.PropertyFilter.eq("worksheet_id", worksheetId))
-            .build();
+    Query<Entity> query = Query.newEntityQueryBuilder()
+        .setKind("ExecutionActivity")
+        .setFilter(StructuredQuery.PropertyFilter.eq("worksheet_id", worksheetId))
+        .build();
 
-        QueryResults<Entity> results = datastore.run(query);
-        List<ExecutionSheetData.PolygonOperation> activities = new ArrayList<>();
+    QueryResults<Entity> results = datastore.run(query);
+    List<ExecutionSheetData.PolygonOperation> activities = new ArrayList<>();
 
-        while (results.hasNext()) {
-            Entity e = results.next();
-            ExecutionSheetData.PolygonOperation op = new ExecutionSheetData.PolygonOperation();
-            op.operation_code = e.contains("operation_code") ? e.getString("operation_code") : null;
-            op.activity_id = String.valueOf(e.getKey().getId());
-            op.status = e.contains("status") ? e.getString("status") : null;
-            op.starting_date = e.contains("start_time") ? String.valueOf(e.getLong("start_time")) : null;
-            op.finishing_date = e.contains("end_time") ? String.valueOf(e.getLong("end_time")) : null;
-            op.observations = e.contains("observations") ? e.getString("observations") : null;
+    while (results.hasNext()) {
+        Entity e = results.next();
+        ExecutionSheetData.PolygonOperation op = new ExecutionSheetData.PolygonOperation();
+        op.operation_code = e.contains("operation_code") ? e.getString("operation_code") : null;
+        op.activity_id = String.valueOf(e.getKey().getId());
+        op.status = e.contains("status") ? e.getString("status") : null;
+        op.starting_date = e.contains("start_time") ? String.valueOf(e.getLong("start_time")) : null;
+        op.finishing_date = e.contains("end_time") ? String.valueOf(e.getLong("end_time")) : null;
+        op.observations = e.contains("observations") ? e.getString("observations") : null;
 
-            if (e.contains("gpx_track")) {
-                try {
-                    op.tracks = List.of(g.fromJson(e.getString("gpx_track"), ExecutionSheetData.Track[].class));
-                } catch (Exception ignore) {}
-            }
-
-            activities.add(op);
+        if (e.contains("gpx_track")) {
+            try {
+                op.tracks = List.of(g.fromJson(e.getString("gpx_track"), ExecutionSheetData.Track[].class));
+            } catch (Exception ignore) {}
         }
 
-        return Response.ok(g.toJson(activities)).build();
+        activities.add(op);
     }
 
+    return Response.ok(g.toJson(activities)).build();
+}
 
-    @PUT
-    @Path("/editOperation")
-    @Consumes(MediaType.APPLICATION_JSON)
-    public Response editOperationInfo(@CookieParam("session::apdc") Cookie cookie,
-                                    @HeaderParam("Authorization") String authHeader,
-                                    ExecutionSheetData.Operation operation) {
-        String token = extractJWT(cookie, authHeader);
-        if (token == null || !JWTToken.validateJWT(token)) return unauthorized("Invalid session");
 
-        DecodedJWT jwt = JWTToken.extractJWT(token);
-        if (jwt == null) return unauthorized("Failed to decode token");
+@PUT
+@Path("/editOperation")
+@Consumes(MediaType.APPLICATION_JSON)
+public Response editOperationInfo(@CookieParam("session::apdc") Cookie cookie,
+                                  @HeaderParam("Authorization") String authHeader,
+                                  ExecutionSheetData.Operation operation) {
+    String token = extractJWT(cookie, authHeader);
+    if (token == null || !JWTToken.validateJWT(token)) return unauthorized("Invalid session");
 
-        String role = jwt.getClaim("role").asString();
-        if (!Set.of(Roles.PRBO, Roles.SDVBO).contains(role))
-            return forbidden("Access denied");
-    
-        String worksheetId = jwt.getClaim("worksheet_id").asString(); 
-        if (worksheetId == null || operation.operation_code == null)
-            return Response.status(Response.Status.BAD_REQUEST)
-                        .entity("{\"error\":\"Missing worksheet_id or operation_code\"}").build();
+    DecodedJWT jwt = JWTToken.extractJWT(token);
+    if (jwt == null) return unauthorized("Failed to decode token");
 
-        Key key = datastore.newKeyFactory()
-                        .setKind("ExecutionOperation")
-                        .newKey(worksheetId + ":" + operation.operation_code);
+    String role = jwt.getClaim("role").asString();
+    if (!Set.of(Roles.PRBO, Roles.SDVBO).contains(role))
+        return forbidden("Access denied");
+   
+    String worksheetId = jwt.getClaim("worksheet_id").asString(); 
+    if (worksheetId == null || operation.operation_code == null)
+        return Response.status(Response.Status.BAD_REQUEST)
+                       .entity("{\"error\":\"Missing worksheet_id or operation_code\"}").build();
 
-        Entity.Builder builder = datastore.get(key) != null
-            ? Entity.newBuilder(datastore.get(key))
-            : Entity.newBuilder(key)
-                    .set("worksheet_id", worksheetId)
-                    .set("operation_code", operation.operation_code);
+    Key key = datastore.newKeyFactory()
+                       .setKind("ExecutionOperation")
+                       .newKey(worksheetId + ":" + operation.operation_code);
 
-        builder.set("area_ha_executed", operation.area_ha_executed);
-        builder.set("area_perc", operation.area_perc);
+    Entity.Builder builder = datastore.get(key) != null
+        ? Entity.newBuilder(datastore.get(key))
+        : Entity.newBuilder(key)
+                .set("worksheet_id", worksheetId)
+                .set("operation_code", operation.operation_code);
 
-        if (operation.starting_date != null)
-            builder.set("starting_date", operation.starting_date);
-        if (operation.finishing_date != null)
-            builder.set("finishing_date", operation.finishing_date);
-        if (operation.observations != null)
-            builder.set("observations", operation.observations);
+    builder.set("area_ha_executed", operation.area_ha_executed);
+    builder.set("area_perc", operation.area_perc);
 
-        datastore.put(builder.build());
-        return Response.ok("{\"message\":\"Operation data updated.\"}").build();
-    }
+    if (operation.starting_date != null)
+        builder.set("starting_date", operation.starting_date);
+    if (operation.finishing_date != null)
+        builder.set("finishing_date", operation.finishing_date);
+    if (operation.observations != null)
+        builder.set("observations", operation.observations);
+
+    datastore.put(builder.build());
+    return Response.ok("{\"message\":\"Operation data updated.\"}").build();
+}
 
 
     @POST
