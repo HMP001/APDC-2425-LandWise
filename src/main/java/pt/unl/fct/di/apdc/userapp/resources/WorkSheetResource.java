@@ -1,3 +1,4 @@
+
 package pt.unl.fct.di.apdc.userapp.resources;
 
 import java.io.InputStream;
@@ -47,6 +48,7 @@ import pt.unl.fct.di.apdc.userapp.util.FilterRequest;
 import pt.unl.fct.di.apdc.userapp.util.JWTToken;
 import pt.unl.fct.di.apdc.userapp.util.Roles;
 import pt.unl.fct.di.apdc.userapp.util.WorkSheetData;
+import pt.unl.fct.di.apdc.userapp.util.WorkSheetSearchRequest;
 
 @Path("/worksheet")
 @Produces(MediaType.APPLICATION_JSON + ";charset=utf-8")
@@ -183,10 +185,10 @@ public class WorkSheetResource {
     	}
     	
     	String requesterRole = jwt.getClaim("role").asString();
-    	if (!Roles.SMBO.equalsIgnoreCase(requesterRole) && !Roles.SGVBO.equalsIgnoreCase(requesterRole) && !Roles.SDVBO.equalsIgnoreCase(requesterRole)) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                    .entity("{\"message\":\"Not authorized to view this worksheet.\"}").build();
-     	}
+    	if (!Set.of(Roles.SMBO, Roles.SGVBO, Roles.SDVBO).contains(requesterRole)) {
+            return Response.status(Status.FORBIDDEN)
+                    .entity("{\"message\":\"Not authorized to search worksheets.\"}").build();
+        }
     	
         Key key = datastore.newKeyFactory().setKind("WorkSheet").newKey(id);
         Entity entity = datastore.get(key);
@@ -196,10 +198,9 @@ public class WorkSheetResource {
         
         boolean isSGVBO = Roles.SGVBO.equalsIgnoreCase(requesterRole);
         
-        Set<String> generalFields = Set.of(
-                "id", "title", "aigp","status", "issue_date", "award_date",
-                "starting_date", "finishing_date", "service_provider_id"
-            );
+        Set<String> generalFields = Set.of("id", "title", "aigp","status", "issue_date",
+                 "award_date", "starting_date", "finishing_date", "service_provider_id");
+                
 
         Map<String, Object> data = new HashMap<>();
         for (String name : entity.getNames()) {
@@ -226,10 +227,10 @@ public class WorkSheetResource {
     	}
     	
     	String requesterRole = jwt.getClaim("role").asString();
-    	if (!Roles.SMBO.equalsIgnoreCase(requesterRole) && !Roles.SDVBO.equalsIgnoreCase(requesterRole)) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                    .entity("{\"message\":\"Not authorized to view this worksheet.\"}").build();
-     	}
+    	if (!Set.of(Roles.SMBO, Roles.SDVBO).contains(requesterRole)) {
+            return Response.status(Status.FORBIDDEN)
+                    .entity("{\"message\":\"Not authorized to view worksheets.\"}").build();
+        }
 
         Key key = datastore.newKeyFactory().setKind("WorkSheet").newKey(id);
         Entity entity = datastore.get(key);
@@ -237,12 +238,9 @@ public class WorkSheetResource {
         if (entity == null)
             return Response.status(Response.Status.NOT_FOUND).entity("{\"error\":\"Not found\"}").build();
         
-        Set<String> generalFields = Set.of(
-                "id", "title", "aigp","status", "issue_date", "award_date",
-                "starting_date", "finishing_date", "service_provider_id");
         Map<String, Object> detailedData = new HashMap<>();
         for (String name : entity.getNames()) {
-        	if (generalFields.contains(name)) {detailedData.put(name, entity.getValue(name).get());}
+        	detailedData.put(name, entity.getValue(name).get());
         }
 
         try {
@@ -364,11 +362,21 @@ public class WorkSheetResource {
         Transaction txn = datastore.newTransaction();
         try {
             Entity.Builder builder = Entity.newBuilder(ws);
-            if (request.attributesEdited != null) {
-                for (Map.Entry<String, String> entry : request.attributesEdited.entrySet()) {
+            if (newAttributes != null) {
+                for (Map.Entry<String, String> entry : newAttributes.entrySet()) {
                     builder.set(entry.getKey(), entry.getValue());
                 }
             }
+            
+            if (request.operationsEdited != null) {
+                builder.set("operations", g.toJson(request.operationsEdited));
+            }
+            
+            if (request.featuresEdited != null) {
+                builder.set("features", g.toJson(request.featuresEdited));
+            }
+            
+            builder.set("issuing_user_id", requesterUsername);
             
             datastore.put(builder.build());
             txn.commit();
@@ -382,6 +390,80 @@ public class WorkSheetResource {
             if (txn.isActive()) txn.rollback();
         }
         
+    }
+    
+    @POST
+    @Path("/search")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response searchWorksheets(WorkSheetSearchRequest request,
+                                   @CookieParam("session::apdc") Cookie cookie,
+                                   @HeaderParam("Authorization") String authHeader) {
+    	
+    	String token = extractJWT(cookie, authHeader);
+        if (token == null || !JWTToken.validateJWT(token)) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Invalid or expired session.\"}").build();
+        }
+
+        DecodedJWT jwt = JWTToken.extractJWT(token);
+        String requesterRole = jwt.getClaim("role").asString();
+        
+        if (!Set.of(Roles.SMBO, Roles.SGVBO).contains(requesterRole)) {
+            return Response.status(Status.FORBIDDEN)
+                    .entity("{\"message\":\"Not authorized to search worksheets.\"}").build();
+        }
+        
+        EntityQuery.Builder queryBuilder = Query.newEntityQueryBuilder()
+                .setKind("WorkSheet");
+        if (request.title != null && !request.title.isEmpty()) {
+            queryBuilder.setFilter(StructuredQuery.PropertyFilter.eq("title", request.title));
+        }
+        if (request.status != null && !request.status.isEmpty()) {
+            queryBuilder.setFilter(StructuredQuery.PropertyFilter.eq("status", request.status));
+        }
+        if (request.aigp != null && !request.aigp.isEmpty()) {
+            queryBuilder.setFilter(StructuredQuery.PropertyFilter.ge("aigp", request.aigp));
+        }
+        if (request.serviceProviderId != null && !request.serviceProviderId.isEmpty()) {
+            queryBuilder.setFilter(StructuredQuery.PropertyFilter.eq("service_provider_id", request.serviceProviderId));
+        }
+        if (request.startDateFrom != null && !request.startDateFrom.isEmpty()) {
+            queryBuilder.setFilter(StructuredQuery.PropertyFilter.ge("starting_date", request.startDateFrom));
+        }
+        if (request.startDateTo != null && !request.startDateTo.isEmpty()) {
+            queryBuilder.setFilter(StructuredQuery.PropertyFilter.le("starting_date", request.startDateTo));
+        }
+        
+        queryBuilder.setLimit(request.limit != null ? request.limit : 20)
+        .setOffset(request.offset != null ? request.offset : 0);
+        
+        try {
+        	
+        	QueryResults<Entity> results = datastore.run(queryBuilder.build());
+            List<Map<String, Object>> worksheets = new ArrayList<>();
+            
+            Set<String> generalFields = Set.of("id", "title", "aigp","status", "issue_date",
+                    "award_date", "starting_date", "finishing_date", "service_provider_id");
+            
+            while (results.hasNext()) {
+                Entity entity = results.next();
+                Map<String, Object> worksheetData = new HashMap<>();
+                
+                for (String field : generalFields) {
+                    if (entity.contains(field)) {
+                        worksheetData.put(field, entity.getValue(field).get());
+                    }
+                }
+                
+                worksheets.add(worksheetData);
+            }
+            
+            return Response.ok(g.toJson(worksheets)).build();
+        } catch (Exception e) {
+        	LOG.severe("Error searching worksheets, on querry: " + e.getMessage());
+            return Response.status(Status.INTERNAL_SERVER_ERROR)
+                    .entity("{\"message\":\"Error searching worksheets\"}").build();
+        }
     }
 
     @DELETE
