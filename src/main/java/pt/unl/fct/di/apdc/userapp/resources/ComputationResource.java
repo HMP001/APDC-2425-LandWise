@@ -189,8 +189,6 @@ public class ComputationResource {
         return Response.ok(g.toJson(allUsers)).build();
     }
 
-
-
     private Map<String, Object> entityToMap(Entity entity, String requesterRole) {
         Map<String, Object> map = new HashMap<>();
         map.put("username", entity.getKey().getName());
@@ -234,10 +232,10 @@ public class ComputationResource {
         String userTarget = request.targetUsername;
         String newRole = request.newRole;
         DecodedJWT jwt = JWTToken.extractJWT(token);
-        String username = jwt.getSubject();
-        String role = jwt.getClaim("role").asString();
+        String requesterUsername = jwt.getSubject();
+        String requesterRole = jwt.getClaim("role").asString();
 
-        LOG.fine("Attempt to modify the role for user: " + username);
+        LOG.fine("Attempt to change role of user: " + userTarget + " by: " + requesterUsername);
 
         if (!Roles.isValidRole(newRole)) {
             return Response.status(Status.BAD_REQUEST)
@@ -246,7 +244,7 @@ public class ComputationResource {
         }
 
         Key logoutKey = datastore.newKeyFactory()
-                .addAncestor(PathElement.of("User", username))
+                .addAncestor(PathElement.of("User", requesterUsername))
                 .setKind("RevokedToken")
                 .newKey(token);
         Entity existingRevokedToken = datastore.get(logoutKey);
@@ -256,34 +254,36 @@ public class ComputationResource {
                     .build();
         }
 
-        if (Roles.is(role, Roles.RU, Roles.VU, Roles.ADLU, Roles.PO, Roles.PRBO)) {
+        if (!RolePermissions.canPerform(requesterRole, "CHANGE_ROLE")) {
             return Response.status(Status.FORBIDDEN)
-                    .entity("{\"message\":\"Permission denied.\"}")
+                    .entity("{\"message\":\"Permission denied: role not allowed to change roles.\"}")
                     .build();
         }
 
         Key userKey = datastore.newKeyFactory().setKind("User").newKey(userTarget);
         Entity targetUser = datastore.get(userKey);
-
         if (targetUser == null) {
             return Response.status(Status.NOT_FOUND)
                     .entity("{\"message\":\"Target user not found.\"}")
                     .build();
         }
 
-        String currentRole = targetUser.getString("user_role");
+        String currentTargetRole = targetUser.getString("user_role");
 
-        if (Roles.is(role, Roles.SGVBO)) {
-            if (!Roles.is(currentRole, Roles.RU, Roles.VU, Roles.ADLU) ||
-                !Roles.is(newRole, Roles.RU, Roles.VU, Roles.ADLU)) {
+        if (!RolePermissions.hasHigherPriority(requesterRole, currentTargetRole) ||
+            !RolePermissions.hasHigherPriority(requesterRole, newRole)) {
+            return Response.status(Status.FORBIDDEN)
+                    .entity("{\"message\":\"Cannot change role of equal or higher privileged users.\"}")
+                    .build();
+        }
+
+        if (Roles.is(requesterRole, Roles.SGVBO)) {
+            Set<String> allowed = Set.of(Roles.RU, Roles.VU, Roles.ADLU);
+            if (!allowed.contains(currentTargetRole) || !allowed.contains(newRole)) {
                 return Response.status(Status.FORBIDDEN)
                         .entity("{\"message\":\"SGVBO can only change roles among RU, VU, ADLU.\"}")
                         .build();
             }
-        } else if (!Roles.is(role, Roles.SYSADMIN, Roles.SYSBO, Roles.SDVBO, Roles.SMBO)) {
-            return Response.status(Status.FORBIDDEN)
-                    .entity("{\"message\":\"Only SYS or SD/SM BO can change other roles.\"}")
-                    .build();
         }
 
         Entity updatedUser = Entity.newBuilder(targetUser)
@@ -293,7 +293,6 @@ public class ComputationResource {
 
         return Response.ok("{\"message\":\"Role updated successfully.\"}").build();
     }
-
 
 
 	@POST
@@ -321,7 +320,7 @@ public class ComputationResource {
         String userTarget = request.targetUsername;
         String newState = request.account_state;
 
-        LOG.fine("Attempt to modify account state for user: " + username);
+        LOG.fine("Attempt to modify account state for user: " + userTarget + " by: " + username);
 
         Key logoutKey = datastore.newKeyFactory()
                 .addAncestor(PathElement.of("User", username))
@@ -332,7 +331,7 @@ public class ComputationResource {
                     .entity("{\"message\":\"Token revoked.\"}").build();
         }
 
-        if (!Roles.is(role, Roles.SYSADMIN, Roles.SYSBO, Roles.SGVBO, Roles.SDVBO, Roles.SMBO)) {
+        if (!RolePermissions.canPerform(role, "CHANGE_STATE")) {
             return Response.status(Status.FORBIDDEN)
                     .entity("{\"message\":\"Permission denied.\"}").build();
         }
@@ -372,7 +371,6 @@ public class ComputationResource {
                 }
             }
         }
-
         Entity updated = Entity.newBuilder(user)
                 .set("user_account_state", newState)
                 .build();
@@ -383,7 +381,6 @@ public class ComputationResource {
     }
 
 
-
 	@POST
     @Path("/removeaccount")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -391,6 +388,7 @@ public class ComputationResource {
     public Response removeAccount(RemoveAccount request,
                                 @CookieParam("session::apdc") Cookie cookie,
                                 @HeaderParam("Authorization") String authHeader) {
+
         if (request == null || request.targetUsername == null) {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("{\"message\":\"Missing target username.\"}").build();
@@ -412,7 +410,7 @@ public class ComputationResource {
         String role = jwt.getClaim("role").asString();
         String userTarget = request.targetUsername;
 
-        LOG.fine("Attempt to remove the account for user: " + username);
+        LOG.fine("Attempt to remove the account for user: " + userTarget + " by: " + username);
 
         Key logoutKey = datastore.newKeyFactory()
                 .addAncestor(PathElement.of("User", username))
@@ -425,7 +423,6 @@ public class ComputationResource {
 
         Key userKey = datastore.newKeyFactory().setKind("User").newKey(userTarget);
         Entity targetUser = datastore.get(userKey);
-
         if (targetUser == null) {
             return Response.status(Response.Status.NOT_FOUND)
                     .entity("{\"message\":\"Target user not found.\"}").build();
@@ -433,12 +430,10 @@ public class ComputationResource {
 
         String targetRole = targetUser.getString("user_role").toUpperCase();
 
-        // Role restrictions
-        if (Roles.is(role, Roles.RU, Roles.VU, Roles.PO, Roles.PRBO, Roles.ADLU)) {
+        if (!RolePermissions.canPerform(role, "DELETE_USER")) {
             return Response.status(Response.Status.FORBIDDEN)
                     .entity("{\"message\":\"You are not allowed to remove accounts.\"}").build();
         }
-
         if (Roles.is(role, Roles.SGVBO)) {
             if (!Roles.is(targetRole, Roles.RU, Roles.VU, Roles.ADLU)) {
                 return Response.status(Response.Status.FORBIDDEN)
@@ -479,32 +474,32 @@ public class ComputationResource {
                 .setKind("RevokedToken")
                 .newKey(token);
         if (datastore.get(logoutKey) != null) {
-            return Response.status(Status.BAD_REQUEST)
+            return Response.status(Response.Status.BAD_REQUEST)
                     .entity("{\"message\":\"Token revoked.\"}").build();
         }
 
         Key targetKey = datastore.newKeyFactory().setKind("User").newKey(userTarget);
         Entity targetUser = datastore.get(targetKey);
         if (targetUser == null) {
-            return Response.status(Status.NOT_FOUND)
+            return Response.status(Response.Status.NOT_FOUND)
                     .entity("{\"message\":\"Target user not found.\"}").build();
         }
 
         String targetRole = targetUser.getString("user_role").toUpperCase();
 
-        if (Roles.is(role, Roles.RU, Roles.VU, Roles.PO, Roles.PRBO)) {
-            return Response.status(Status.FORBIDDEN)
+        if (!RolePermissions.canPerform(role, "MODIFY_ATTRIBUTES")) {
+            return Response.status(Response.Status.FORBIDDEN)
                     .entity("{\"message\":\"Role not authorized to modify attributes.\"}").build();
         }
 
         if (Roles.is(role, Roles.ADLU)) {
             if (!username.equals(userTarget)) {
-                return Response.status(Status.FORBIDDEN)
+                return Response.status(Response.Status.FORBIDDEN)
                         .entity("{\"message\":\"You can only modify your own account.\"}").build();
             }
             for (String attr : newAttributes.keySet()) {
                 if (Set.of("name", "email", "role", "account_state").contains(attr)) {
-                    return Response.status(Status.FORBIDDEN)
+                    return Response.status(Response.Status.FORBIDDEN)
                             .entity("{\"message\":\"You cannot modify name, email, role, or account state.\"}").build();
                 }
             }
@@ -512,12 +507,12 @@ public class ComputationResource {
 
         if (Roles.is(role, Roles.SGVBO)) {
             if (!Roles.is(targetRole, Roles.RU, Roles.VU, Roles.ADLU)) {
-                return Response.status(Status.FORBIDDEN)
+                return Response.status(Response.Status.FORBIDDEN)
                         .entity("{\"message\":\"SGVBO can only modify attributes of RU, VU, or ADLU.\"}").build();
             }
             for (String attr : newAttributes.keySet()) {
                 if (Set.of("name", "email", "role", "account_state").contains(attr)) {
-                    return Response.status(Status.FORBIDDEN)
+                    return Response.status(Response.Status.FORBIDDEN)
                             .entity("{\"message\":\"SGVBO cannot modify name, email, role or account state.\"}").build();
                 }
             }
@@ -535,7 +530,7 @@ public class ComputationResource {
             return Response.ok("{\"message\":\"Attributes updated successfully.\"}").build();
         } catch (Exception e) {
             txn.rollback();
-            return Response.status(Status.INTERNAL_SERVER_ERROR)
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity("{\"message\":\"Error updating attributes: " + e.getMessage() + "\"}").build();
         } finally {
             if (txn.isActive()) txn.rollback();
@@ -543,62 +538,69 @@ public class ComputationResource {
     }
 
 
-    @POST
-    @Path("/changepassword")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response changePassword(ChangePassword request,
-                                   @CookieParam("session::apdc") Cookie cookie,
-                                   @HeaderParam("Authorization") String authHeader) {
-        String token = extractJWT(cookie, authHeader);
-        if (token == null || !JWTToken.validateJWT(token)) {
-            return Response.status(Status.UNAUTHORIZED)
-                    .entity("{\"message\":\"Invalid or expired session.\"}").build();
-        }
-    
-        DecodedJWT jwt = JWTToken.extractJWT(token);
-        String username = jwt.getSubject();
-    
-        String password = request.currentPassword;
-        String newPassword = request.newPassword;
-        String confirmPassword = request.confirmPassword;
-    
-        LOG.fine("Attempt to change password for user: " + username);
-    
-        Key logoutKey = datastore.newKeyFactory()
-                .addAncestor(PathElement.of("User", username))
-                .setKind("RevokedToken")
-                .newKey(token);
-        if (datastore.get(logoutKey) != null) {
-            return Response.status(Status.BAD_REQUEST)
-                    .entity("{\"message\":\"Token revoked.\"}").build();
-        }
-    
-        if (!newPassword.equals(confirmPassword)) {
-            return Response.status(Status.BAD_REQUEST)
-                    .entity("{\"message\":\"New password and confirmation do not match.\"}").build();
-        }
-    
-        Key userKey = datastore.newKeyFactory().setKind("User").newKey(username);
-        Entity user = datastore.get(userKey);
-        if (user == null) {
-            return Response.status(Status.NOT_FOUND)
-                    .entity("{\"message\":\"User not found.\"}").build();
-        }
-    
-        String currentHashed = DigestUtils.sha512Hex(password);
-        if (!user.getString("user_pwd").equals(currentHashed)) {
-            return Response.status(Status.FORBIDDEN)
-                    .entity("{\"message\":\"Current password is incorrect.\"}").build();
-        }
-    
-        Entity updatedUser = Entity.newBuilder(user)
-                .set("user_pwd", DigestUtils.sha512Hex(newPassword))
-                .build();
-        datastore.put(updatedUser);
-    
-        return Response.ok("{\"message\":\"Password changed successfully.\"}").build();
+@POST
+@Path("/changepassword")
+@Consumes(MediaType.APPLICATION_JSON)
+@Produces(MediaType.APPLICATION_JSON)
+public Response changePassword(ChangePassword request,
+                               @CookieParam("session::apdc") Cookie cookie,
+                               @HeaderParam("Authorization") String authHeader) {
+    String token = extractJWT(cookie, authHeader);
+    if (token == null || !JWTToken.validateJWT(token)) {
+        return Response.status(Status.UNAUTHORIZED)
+                .entity("{\"message\":\"Invalid or expired session.\"}").build();
     }
+
+    DecodedJWT jwt = JWTToken.extractJWT(token);
+    String username = jwt.getSubject();
+    String role = jwt.getClaim("role").asString();
+
+    String password = request.currentPassword;
+    String newPassword = request.newPassword;
+    String confirmPassword = request.confirmPassword;
+
+    LOG.fine("Attempt to change password for user: " + username);
+
+    Key logoutKey = datastore.newKeyFactory()
+            .addAncestor(PathElement.of("User", username))
+            .setKind("RevokedToken")
+            .newKey(token);
+    if (datastore.get(logoutKey) != null) {
+        return Response.status(Status.BAD_REQUEST)
+                .entity("{\"message\":\"Token revoked.\"}").build();
+    }
+
+    if (!RolePermissions.canPerform(role, "CHANGE_PASSWORD")) {
+        return Response.status(Status.FORBIDDEN)
+                .entity("{\"message\":\"Role not authorized to change password.\"}").build();
+    }
+
+    if (!newPassword.equals(confirmPassword)) {
+        return Response.status(Status.BAD_REQUEST)
+                .entity("{\"message\":\"New password and confirmation do not match.\"}").build();
+    }
+
+    Key userKey = datastore.newKeyFactory().setKind("User").newKey(username);
+    Entity user = datastore.get(userKey);
+    if (user == null) {
+        return Response.status(Status.NOT_FOUND)
+                .entity("{\"message\":\"User not found.\"}").build();
+    }
+
+    String currentHashed = DigestUtils.sha512Hex(password);
+    if (!user.getString("user_pwd").equals(currentHashed)) {
+        return Response.status(Status.FORBIDDEN)
+                .entity("{\"message\":\"Current password is incorrect.\"}").build();
+    }
+
+    Entity updatedUser = Entity.newBuilder(user)
+            .set("user_pwd", DigestUtils.sha512Hex(newPassword))
+            .build();
+    datastore.put(updatedUser);
+
+    return Response.ok("{\"message\":\"Password changed successfully.\"}").build();
+}
+
     
     @POST
     @Path("/deleteaccount")
@@ -615,6 +617,7 @@ public class ComputationResource {
 
         DecodedJWT jwt = JWTToken.extractJWT(token);
         String username = jwt.getSubject();
+        String role = jwt.getClaim("role").asString();
 
         String userTarget = request.targetUsername;
         String newState = "P-REMOVER";
@@ -635,6 +638,11 @@ public class ComputationResource {
                     .entity("{\"message\":\"You can only request deletion of your own account.\"}").build();
         }
 
+        if (!RolePermissions.canPerform(role, "REQUEST_SELF_DELETE")) {
+            return Response.status(Status.FORBIDDEN)
+                    .entity("{\"message\":\"Role not authorized to request account deletion.\"}").build();
+        }
+
         Key userKey = datastore.newKeyFactory().setKind("User").newKey(userTarget);
         Entity user = datastore.get(userKey);
 
@@ -642,12 +650,19 @@ public class ComputationResource {
             return Response.status(Status.NOT_FOUND)
                     .entity("{\"message\":\"User not found.\"}").build();
         }
+        String currentState = user.getString("user_account_state");
 
+        if (currentState.equals("P-REMOVER")) {
+            return Response.status(Status.BAD_REQUEST)
+                    .entity("{\"message\":\"Account deletion already requested.\"}").build();
+        }
+        
         Entity updated = Entity.newBuilder(user).set("user_account_state", newState).build();
         datastore.put(updated);
 
         return Response.ok("{\"message\":\"Account deletion requested successfully.\"}").build();
     }
+
 
     @POST
     @Path("/forceLogout")
@@ -670,9 +685,9 @@ public class ComputationResource {
 
         LOG.fine("User " + requesterUsername + " attempts to force logout " + request.targetUsername);
 
-        if (!Roles.is(requesterRole, Roles.SYSADMIN, Roles.SYSBO, Roles.SGVBO, Roles.SDVBO, Roles.SMBO)) {
+        if (!RolePermissions.canPerform(requesterRole, "FORCE_LOGOUT")) {
             return Response.status(Status.FORBIDDEN)
-                    .entity("{\"message\":\"Permission denied.\"}")
+                    .entity("{\"message\":\"Role " + requesterRole + " is not authorized to force logout users.\"}")
                     .build();
         }
 
@@ -688,7 +703,7 @@ public class ComputationResource {
 
         if (!targetUser.contains("last_jti") || !targetUser.contains("token_expiration")) {
             return Response.status(Status.BAD_REQUEST)
-                    .entity("{\"message\":\"No active session found for user.\"}")
+                    .entity("{\"message\":\"No active session found for target user.\"}")
                     .build();
         }
 
@@ -713,12 +728,15 @@ public class ComputationResource {
         return Response.ok(response.toString()).build();
     }
 
-      @POST
+
+        @POST
         @Path("/visibility")
         @Consumes(MediaType.APPLICATION_JSON)
+        @Produces(MediaType.APPLICATION_JSON)
         public Response changeVisibility(ChangeVisibility request,
                                         @CookieParam("session::apdc") Cookie cookie,
                                         @HeaderParam("Authorization") String authHeader) {
+
             String token = extractJWT(cookie, authHeader);
             if (token == null || !JWTToken.validateJWT(token)) {
                 return Response.status(Response.Status.UNAUTHORIZED)
@@ -727,6 +745,7 @@ public class ComputationResource {
 
             DecodedJWT jwt = JWTToken.extractJWT(token);
             String username = jwt.getSubject();
+            String requesterRole = jwt.getClaim("role").asString();
 
             if (!request.valid()) {
                 return Response.status(Response.Status.BAD_REQUEST)
@@ -734,66 +753,55 @@ public class ComputationResource {
             }
 
             String targetUser = request.targetUsername;
+            String newVisibility = request.newVisibility.toUpperCase();
+            Entity user;
+            String effectiveTarget;
 
-            if( targetUser == null || targetUser.isBlank()) {
+            if (targetUser == null || targetUser.isBlank()) {
+                Key userKey = datastore.newKeyFactory().setKind("User").newKey(username);
+                user = datastore.get(userKey);
+                effectiveTarget = username;
 
-            Key userKey = datastore.newKeyFactory().setKind("User").newKey(username);
-            Entity user = datastore.get(userKey);
-            if (user == null) {
-                return Response.status(Response.Status.NOT_FOUND)
-                        .entity("{\"message\":\"User not found.\"}").build();
+                if (user == null) {
+                    return Response.status(Response.Status.NOT_FOUND)
+                            .entity("{\"message\":\"User not found.\"}").build();
+                }
+            } else {
+                if (!RolePermissions.canPerform(requesterRole, "MODIFY_VISIBILITY")) {
+                    return Response.status(Status.FORBIDDEN)
+                            .entity("{\"message\":\"Role " + requesterRole + " is not authorized to modify other users' visibility.\"}")
+                            .build();
+                }
+
+                Key userKey = datastore.newKeyFactory().setKind("User").newKey(targetUser);
+                user = datastore.get(userKey);
+                effectiveTarget = targetUser;
+
+                if (user == null) {
+                    return Response.status(Response.Status.NOT_FOUND)
+                            .entity("{\"message\":\"Target user not found.\"}").build();
+                }
             }
 
             Entity updatedUser = Entity.newBuilder(user)
-                    .set("user_visibility", request.newVisibility.toUpperCase())
+                    .set("user_visibility", newVisibility)
                     .build();
-
             datastore.put(updatedUser);
 
-            LOG.info("Visibility changed for user: " + username + " to " + request.newVisibility);
+            LOG.info("Visibility changed for user: " + effectiveTarget + " to " + newVisibility);
+
             JsonObject response = new JsonObject();
-            response.addProperty("message", "Account visibility updated to " + request.newVisibility + ".");
-
-        } else {
-            String requesterRole = jwt.getClaim("role").asString();
-
-            if (!Roles.is(requesterRole, Roles.SYSADMIN)) {
-            return Response.status(Status.FORBIDDEN)
-                    .entity("{\"message\":\"Permission denied.\"}")
-                    .build();
-        }
-            
-            Key userKey = datastore.newKeyFactory().setKind("User").newKey(targetUser);
-            Entity user = datastore.get(userKey);
-            if (user == null) {
-                return Response.status(Response.Status.NOT_FOUND)
-                        .entity("{\"message\":\"Target user not found.\"}").build();
-            }
-
-            Entity updatedUser = Entity.newBuilder(user)
-                    .set("user_visibility", request.newVisibility.toUpperCase())
-                    .build();
-
-            datastore.put(updatedUser);
-
-            LOG.info("Visibility changed for user: " + targetUser + " to " + request.newVisibility);
-            JsonObject response = new JsonObject();
-            response.addProperty("message", "Account visibility for " + targetUser + " updated to " + request.newVisibility + ".");
-        }
-
-        // Return the response
-        JsonObject response = new JsonObject();
-        response.addProperty("message", "Account visibility updated successfully.");
-
+            response.addProperty("message", "Account visibility for " + effectiveTarget + " updated to " + newVisibility + ".");
             return Response.ok(response.toString()).build();
         }
 
     @POST
     @Path("/block")
     @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
     public Response blockAccount(BlockAccountRequest request,
-                                 @CookieParam("session::apdc") Cookie cookie,
-                                 @HeaderParam("Authorization") String authHeader) {
+                                @CookieParam("session::apdc") Cookie cookie,
+                                @HeaderParam("Authorization") String authHeader) {
 
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token)) {
@@ -810,10 +818,10 @@ public class ComputationResource {
         String requester = jwt.getSubject();
         String role = jwt.getClaim("role").asString();
 
-        // Only high-level roles can block accounts
-        if (!Roles.is(role, Roles.SYSADMIN, Roles.SYSBO, Roles.SGVBO, Roles.SDVBO)) {
+        if (!RolePermissions.canPerform(role, "BLOCK_ACCOUNT")) {
             return Response.status(Response.Status.FORBIDDEN)
-                    .entity("{\"message\":\"Permission denied.\"}").build();
+                    .entity("{\"message\":\"Role " + role + " is not authorized to block accounts.\"}")
+                    .build();
         }
 
         Key userKey = datastore.newKeyFactory().setKind("User").newKey(request.targetUsername);
@@ -824,11 +832,11 @@ public class ComputationResource {
                     .entity("{\"message\":\"User not found.\"}").build();
         }
 
-        // Prevent blocking SYSADMINs or yourself
         String targetRole = targetUser.getString("user_role");
+
         if (Roles.is(targetRole, Roles.SYSADMIN) || requester.equals(request.targetUsername)) {
             return Response.status(Response.Status.FORBIDDEN)
-                    .entity("{\"message\":\"Cannot block this account.\"}").build();
+                    .entity("{\"message\":\"You cannot block this account.\"}").build();
         }
 
         Entity updatedUser = Entity.newBuilder(targetUser)
@@ -837,13 +845,11 @@ public class ComputationResource {
         datastore.put(updatedUser);
 
         LOG.info("User " + request.targetUsername + " blocked by " + requester);
+
         JsonObject response = new JsonObject();
         response.addProperty("message", "User " + request.targetUsername + " was blocked successfully.");
-
         return Response.ok(response.toString()).build();
     }
 
+
 }
-
-
-

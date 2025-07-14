@@ -19,22 +19,22 @@ public class RolePermissions {
         ROLE_PRIORITY.put(Roles.RU, 8);
         ROLE_PRIORITY.put(Roles.VU, 9);
 
-        ROLE_ACTIONS.put(Roles.SYSADMIN, Set.of("BLOCK_USER", "UNBLOCK_USER", "FORCE_LOGOUT", "DELETE_USER", "VIEW_ALL"));
-        ROLE_ACTIONS.put(Roles.SYSBO, Set.of("BLOCK_USER", "UNBLOCK_USER", "FORCE_LOGOUT", "VIEW_ALL"));
-        ROLE_ACTIONS.put(Roles.SMBO, Set.of("BLOCK_USER", "UNBLOCK_USER", "VIEW_ALL"));
-        ROLE_ACTIONS.put(Roles.SGVBO, Set.of("BLOCK_USER", "VIEW_ALL"));
-        ROLE_ACTIONS.put(Roles.SDVBO, Set.of("BLOCK_USER"));
-        ROLE_ACTIONS.put(Roles.PRBO, Set.of("VIEW_PARTNER_DATA"));
-        ROLE_ACTIONS.put(Roles.PO, Set.of("VIEW_PO_DATA"));
-        ROLE_ACTIONS.put(Roles.ADLU, Set.of("EDIT_SELF", "VIEW_SELF"));
-        ROLE_ACTIONS.put(Roles.RU, Set.of("VIEW_SELF"));
-        ROLE_ACTIONS.put(Roles.VU, Set.of("VIEW_PUBLIC"));
+        ROLE_ACTIONS.put(Roles.SYSADMIN, Set.of("BLOCK_USER", "UNBLOCK_USER", "FORCE_LOGOUT", "DELETE_USER", "VIEW_ALL", "CHANGE_ROLE","CHANGE_STATE","MODIFY_ATTRIBUTES","CHANGE_PASSWORD","REMOVE_ACCOUNT","MODIFY_VISIBILITY","BLOCK_ACCOUNT"));
+        ROLE_ACTIONS.put(Roles.SYSBO, Set.of("BLOCK_USER", "UNBLOCK_USER", "FORCE_LOGOUT", "VIEW_ALL", "CHANGE_ROLE","CHANGE_STATE","DELETE_USER","MODIFY_ATTRIBUTES","CHANGE_PASSWORD","BLOCK_ACCOUNT"));
+        ROLE_ACTIONS.put(Roles.SMBO, Set.of("BLOCK_USER", "UNBLOCK_USER", "VIEW_ALL","CHANGE_STATE","MODIFY_ATTRIBUTES","CHANGE_PASSWORD"));
+        ROLE_ACTIONS.put(Roles.SGVBO, Set.of("BLOCK_USER", "VIEW_ALL", "CHANGE_ROLE","CHANGE_STATE","DELETE_USER","MODIFY_ATTRIBUTES","CHANGE_PASSWORD","REQUEST_SELF_DELETE","REMOVE_ACCOUNT","MODIFY_VISIBILITY","BLOCK_ACCOUNT"));
+        ROLE_ACTIONS.put(Roles.SDVBO, Set.of("BLOCK_USER","CHANGE_STATE", "VIEW_ALL","MODIFY_ATTRIBUTES","CHANGE_PASSWORD","BLOCK_ACCOUNT"));
+        ROLE_ACTIONS.put(Roles.PRBO, Set.of("VIEW_PARTNER_DATA","CHANGE_PASSWORD","REQUEST_SELF_DELETE"));
+        ROLE_ACTIONS.put(Roles.PO, Set.of("VIEW_PO_DATA","CHANGE_PASSWORD","REQUEST_SELF_DELETE"));
+        ROLE_ACTIONS.put(Roles.ADLU, Set.of("EDIT_SELF", "VIEW_SELF","MODIFY_ATTRIBUTES","CHANGE_PASSWORD","REQUEST_SELF_DELETE"));
+        ROLE_ACTIONS.put(Roles.RU, Set.of("VIEW_SELF","CHANGE_PASSWORD","REQUEST_SELF_DELETE"));
+        ROLE_ACTIONS.put(Roles.VU, Set.of("VIEW_PUBLIC","CHANGE_PASSWORD","REQUEST_SELF_DELETE"));
     }
 
     public static boolean canPerform(String role, String action) {
         if (role == null || action == null) return false;
         Set<String> actions = ROLE_ACTIONS.get(role.toUpperCase());
-        return actions != null && actions.contains(action);
+        return actions != null && actions.contains(action.toUpperCase());
     }
 
     public static boolean hasHigherPriority(String role1, String role2) {
