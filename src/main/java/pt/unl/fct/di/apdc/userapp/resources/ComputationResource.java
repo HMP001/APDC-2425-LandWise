@@ -84,6 +84,7 @@ public class ComputationResource {
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity("{\"message\":\"Failed to decode token.\"}").build();
         }
+
         String requesterRole = jwt.getClaim("role").asString();
 
         if (!Roles.isValidRole(requesterRole)) {
@@ -98,6 +99,7 @@ public class ComputationResource {
 
         Key userKey = datastore.newKeyFactory().setKind("User").newKey(targetUsername);
         Entity user = datastore.get(userKey);
+
         if (user == null) {
             return Response.status(Response.Status.NOT_FOUND)
                     .entity("{\"message\":\"User not found.\"}").build();
@@ -107,33 +109,29 @@ public class ComputationResource {
         String targetState = user.getString("user_account_state");
         String targetProfile = user.contains("user_profile") ? user.getString("user_profile") : "";
 
-        if (Roles.is(requesterRole, Roles.RU, Roles.VU)) {
-            if (!"ATIVADO".equalsIgnoreCase(targetState) ||
-                !"PUBLICO".equalsIgnoreCase(targetProfile) ||
-                !Roles.is(targetRole, Roles.RU)) {
-                return Response.status(Response.Status.FORBIDDEN)
-                        .entity("{\"message\":\"You do not have permission to view this user.\"}").build();
-            }
-        }
-
         if (!RolePermissions.canView(requesterRole, targetRole)) {
             return Response.status(Response.Status.FORBIDDEN)
                     .entity("{\"message\":\"You do not have permission to view this user.\"}").build();
         }
 
+        if (Roles.is(requesterRole, Roles.RU, Roles.VU)) {
+            if (!"ATIVADO".equalsIgnoreCase(targetState) ||
+                !"PUBLICO".equalsIgnoreCase(targetProfile)) {
+                return Response.status(Response.Status.FORBIDDEN)
+                        .entity("{\"message\":\"You do not have permission to view this user.\"}").build();
+            }
+        }
+
         Map<String, Object> filteredData = entityToMap(user, requesterRole);
         return Response.ok(g.toJson(filteredData)).build();
     }
-
-    
-
     
     @GET
     @Path("/list")
     @Produces(MediaType.APPLICATION_JSON)
     public Response listUsers(@CookieParam("session::apdc") Cookie cookie,
                             @HeaderParam("Authorization") String authHeader) {
-        
+
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token)) {
             return Response.status(Status.UNAUTHORIZED)
@@ -144,6 +142,7 @@ public class ComputationResource {
         DecodedJWT jwt = JWTToken.extractJWT(token);
         String username = jwt.getSubject();
         String role = jwt.getClaim("role").asString();
+
         LOG.fine("Attempt to list all users for user: " + username);
 
         if (!Roles.isValidRole(role)) {
@@ -151,6 +150,16 @@ public class ComputationResource {
                     .entity("{\"message\":\"Invalid role.\"}")
                     .build();
         }
+
+        Set<String> viewPerms = Set.of("VIEW_ALL", "VIEW_PARTNER_DATA", "VIEW_PO_DATA", "VIEW_PUBLIC");
+
+        boolean canView = viewPerms.stream().anyMatch(p -> RolePermissions.canPerform(role, p));
+        if (!canView) {
+            return Response.status(Status.FORBIDDEN)
+                    .entity("{\"message\":\"Role not authorized to list users.\"}")
+                    .build();
+        }
+
 
         Query<Entity> query = Query.newEntityQueryBuilder().setKind("User").build();
         QueryResults<Entity> results = datastore.run(query);
@@ -163,18 +172,14 @@ public class ComputationResource {
             String userState = user.contains("user_account_state") ? user.getString("user_account_state") : "";
             String userProfile = user.contains("user_profile") ? user.getString("user_profile") : "";
 
-            if (Roles.is(role, Roles.RU, Roles.VU)) {
-                if (!userRole.equals(Roles.RU) || !userState.equals("ATIVADO") || !userProfile.equals("PUBLICO")) {
+            if (!RolePermissions.canView(role, userRole)) {
+                continue;
+            }
+
+            if (Roles.is(role, Roles.VU, Roles.RU)) {
+                if (!userState.equalsIgnoreCase("ATIVADO") || !userProfile.equalsIgnoreCase("PUBLICO")) {
                     continue;
                 }
-            } else if (Roles.is(role, Roles.ADLU, Roles.PRBO, Roles.PO)) {
-                if (!Roles.is(userRole, Roles.RU, Roles.VU)) {
-                    continue;
-                }
-            } else if (!Roles.is(role, Roles.SYSADMIN, Roles.SYSBO, Roles.SGVBO, Roles.SDVBO, Roles.SMBO)) {
-                return Response.status(Status.FORBIDDEN)
-                        .entity("{\"message\":\"Role not authorized to list users.\"}")
-                        .build();
             }
 
             Map<String, Object> userData = entityToMap(user, role);
@@ -183,6 +188,7 @@ public class ComputationResource {
 
         return Response.ok(g.toJson(allUsers)).build();
     }
+
 
 
     private Map<String, Object> entityToMap(Entity entity, String requesterRole) {
@@ -826,7 +832,7 @@ public class ComputationResource {
         }
 
         Entity updatedUser = Entity.newBuilder(targetUser)
-                .set("user_account_state", "BLOCKED")
+                .set("user_account_state", "BLOQUEADO")
                 .build();
         datastore.put(updatedUser);
 

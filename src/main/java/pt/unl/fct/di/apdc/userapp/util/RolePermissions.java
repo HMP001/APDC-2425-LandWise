@@ -1,17 +1,11 @@
 package pt.unl.fct.di.apdc.userapp.util;
 
-import java.util.Map;
-import java.util.HashMap;
-import java.util.Set;
-import java.util.Collections;
+import java.util.*;
 
 public class RolePermissions {
 
     private static final Map<String, Integer> ROLE_PRIORITY = new HashMap<>();
-
     private static final Map<String, Set<String>> ROLE_ACTIONS = new HashMap<>();
-
-    private static final Map<String, Set<String>> VIEW_PERMISSIONS = new HashMap<>();
 
     static {
         ROLE_PRIORITY.put(Roles.SYSADMIN, 0);
@@ -35,29 +29,12 @@ public class RolePermissions {
         ROLE_ACTIONS.put(Roles.ADLU, Set.of("EDIT_SELF", "VIEW_SELF"));
         ROLE_ACTIONS.put(Roles.RU, Set.of("VIEW_SELF"));
         ROLE_ACTIONS.put(Roles.VU, Set.of("VIEW_PUBLIC"));
-
-        VIEW_PERMISSIONS.put(Roles.VU, Set.of(Roles.RU)); 
-        VIEW_PERMISSIONS.put(Roles.RU, Set.of(Roles.RU)); 
-        VIEW_PERMISSIONS.put(Roles.ADLU, Set.of(Roles.RU, Roles.VU));
-        VIEW_PERMISSIONS.put(Roles.PO, Set.of(Roles.RU, Roles.VU));
-        VIEW_PERMISSIONS.put(Roles.PRBO, Set.of(Roles.RU, Roles.VU));
-        VIEW_PERMISSIONS.put(Roles.SMBO, Roles.ALL_ROLES);
-        VIEW_PERMISSIONS.put(Roles.SGVBO, Roles.ALL_ROLES);
-        VIEW_PERMISSIONS.put(Roles.SDVBO, Roles.ALL_ROLES);
-        VIEW_PERMISSIONS.put(Roles.SYSBO, Roles.ALL_ROLES);
-        VIEW_PERMISSIONS.put(Roles.SYSADMIN, Roles.ALL_ROLES);
     }
 
     public static boolean canPerform(String role, String action) {
         if (role == null || action == null) return false;
         Set<String> actions = ROLE_ACTIONS.get(role.toUpperCase());
         return actions != null && actions.contains(action);
-    }
-
-    public static boolean canView(String requesterRole, String targetRole) {
-        if (requesterRole == null || targetRole == null) return false;
-        Set<String> allowedTargets = VIEW_PERMISSIONS.get(requesterRole.toUpperCase());
-        return allowedTargets != null && allowedTargets.contains(targetRole.toUpperCase());
     }
 
     public static boolean hasHigherPriority(String role1, String role2) {
@@ -76,5 +53,30 @@ public class RolePermissions {
         for (String role : ROLE_ACTIONS.keySet()) {
             System.out.println(role + " => " + ROLE_ACTIONS.get(role));
         }
+    }
+
+    public static boolean canView(String viewerRole, String targetRole) {
+        if (viewerRole == null || targetRole == null) return false;
+
+        viewerRole = viewerRole.toUpperCase();
+        targetRole = targetRole.toUpperCase();
+
+        if (!Roles.isValidRole(viewerRole) || !Roles.isValidRole(targetRole)) return false;
+
+        if (canPerform(viewerRole, "VIEW_ALL")) return true;
+
+        if (canPerform(viewerRole, "VIEW_PARTNER_DATA") || canPerform(viewerRole, "VIEW_PO_DATA")) {
+            return Roles.is(targetRole, Roles.RU, Roles.VU);
+        }
+
+        if (Roles.is(viewerRole, Roles.VU, Roles.RU)) {
+            return Roles.is(targetRole, Roles.RU);
+        }
+
+        if (Roles.is(viewerRole, Roles.ADLU)) {
+            return Roles.is(targetRole, Roles.RU, Roles.VU);
+        }
+
+        return false;
     }
 }
