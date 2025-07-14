@@ -8,10 +8,12 @@ import java.util.logging.Logger;
 import org.apache.commons.codec.digest.DigestUtils;
 
 import com.auth0.jwt.interfaces.DecodedJWT;
+import com.google.appengine.repackaged.com.google.gson.JsonObject;
 import com.google.cloud.datastore.Datastore;
 import com.google.cloud.datastore.DatastoreOptions;
 import com.google.cloud.datastore.Entity;
 import com.google.cloud.datastore.Key;
+import com.google.cloud.datastore.KeyFactory;
 import com.google.cloud.datastore.PathElement;
 import com.google.cloud.datastore.Query;
 import com.google.cloud.datastore.QueryResults;
@@ -31,10 +33,13 @@ import jakarta.ws.rs.core.Cookie;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.Response.Status;
+import pt.unl.fct.di.apdc.userapp.util.BlockAccountRequest;
 import pt.unl.fct.di.apdc.userapp.util.ChangeAttributes;
 import pt.unl.fct.di.apdc.userapp.util.ChangePassword;
 import pt.unl.fct.di.apdc.userapp.util.ChangeRole;
 import pt.unl.fct.di.apdc.userapp.util.ChangeState;
+import pt.unl.fct.di.apdc.userapp.util.ChangeVisibility;
+import pt.unl.fct.di.apdc.userapp.util.ForceLogout;
 import pt.unl.fct.di.apdc.userapp.util.JWTToken;
 import pt.unl.fct.di.apdc.userapp.util.RemoveAccount;
 import pt.unl.fct.di.apdc.userapp.util.Roles;
@@ -638,7 +643,201 @@ public class ComputationResource {
         return Response.ok("{\"message\":\"Account deletion requested successfully.\"}").build();
     }
 
-}	
+    @POST
+    @Path("/forceLogout")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response forceLogout(ForceLogout request,
+                                @CookieParam("session::apdc") Cookie cookie,
+                                @HeaderParam("Authorization") String authHeader) {
+
+        String token = extractJWT(cookie, authHeader);
+        if (token == null || !JWTToken.validateJWT(token)) {
+            return Response.status(Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Invalid or expired session.\"}")
+                    .build();
+        }
+
+        DecodedJWT requesterJWT = JWTToken.extractJWT(token);
+        String requesterUsername = requesterJWT.getSubject();
+        String requesterRole = requesterJWT.getClaim("role").asString();
+
+        LOG.fine("User " + requesterUsername + " attempts to force logout " + request.targetUsername);
+
+        if (!Roles.is(requesterRole, Roles.SYSADMIN, Roles.SYSBO, Roles.SGVBO, Roles.SDVBO, Roles.SMBO)) {
+            return Response.status(Status.FORBIDDEN)
+                    .entity("{\"message\":\"Permission denied.\"}")
+                    .build();
+        }
+
+        KeyFactory keyFactory = datastore.newKeyFactory().setKind("User");
+        Key targetUserKey = keyFactory.newKey(request.targetUsername);
+        Entity targetUser = datastore.get(targetUserKey);
+
+        if (targetUser == null) {
+            return Response.status(Status.NOT_FOUND)
+                    .entity("{\"message\":\"Target user not found.\"}")
+                    .build();
+        }
+
+        if (!targetUser.contains("last_jti") || !targetUser.contains("token_expiration")) {
+            return Response.status(Status.BAD_REQUEST)
+                    .entity("{\"message\":\"No active session found for user.\"}")
+                    .build();
+        }
+
+        String jti = targetUser.getString("last_jti");
+        long expiration = targetUser.getLong("token_expiration");
+
+        Key revokedKey = datastore.newKeyFactory()
+                .addAncestor(PathElement.of("User", request.targetUsername))
+                .setKind("RevokedToken")
+                .newKey(jti);
+
+        Entity revokedToken = Entity.newBuilder(revokedKey)
+                .set("expiration", expiration)
+                .build();
+
+        datastore.put(revokedToken);
+
+        LOG.info("User " + request.targetUsername + " was forcibly logged out by " + requesterUsername);
+
+        JsonObject response = new JsonObject();
+        response.addProperty("message", "User " + request.targetUsername + " has been forcibly logged out.");
+        return Response.ok(response.toString()).build();
+    }
+
+      @POST
+        @Path("/visibility")
+        @Consumes(MediaType.APPLICATION_JSON)
+        public Response changeVisibility(ChangeVisibility request,
+                                        @CookieParam("session::apdc") Cookie cookie,
+                                        @HeaderParam("Authorization") String authHeader) {
+            String token = extractJWT(cookie, authHeader);
+            if (token == null || !JWTToken.validateJWT(token)) {
+                return Response.status(Response.Status.UNAUTHORIZED)
+                        .entity("{\"message\":\"Invalid or expired session.\"}").build();
+            }
+
+            DecodedJWT jwt = JWTToken.extractJWT(token);
+            String username = jwt.getSubject();
+
+            if (!request.valid()) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity("{\"message\":\"Invalid visibility value.\"}").build();
+            }
+
+            String targetUser = request.targetUsername;
+
+            if( targetUser == null || targetUser.isBlank()) {
+
+            Key userKey = datastore.newKeyFactory().setKind("User").newKey(username);
+            Entity user = datastore.get(userKey);
+            if (user == null) {
+                return Response.status(Response.Status.NOT_FOUND)
+                        .entity("{\"message\":\"User not found.\"}").build();
+            }
+
+            Entity updatedUser = Entity.newBuilder(user)
+                    .set("user_visibility", request.newVisibility.toUpperCase())
+                    .build();
+
+            datastore.put(updatedUser);
+
+            LOG.info("Visibility changed for user: " + username + " to " + request.newVisibility);
+            JsonObject response = new JsonObject();
+            response.addProperty("message", "Account visibility updated to " + request.newVisibility + ".");
+
+        } else {
+            String requesterRole = jwt.getClaim("role").asString();
+
+            if (!Roles.is(requesterRole, Roles.SYSADMIN)) {
+            return Response.status(Status.FORBIDDEN)
+                    .entity("{\"message\":\"Permission denied.\"}")
+                    .build();
+        }
+            
+            Key userKey = datastore.newKeyFactory().setKind("User").newKey(targetUser);
+            Entity user = datastore.get(userKey);
+            if (user == null) {
+                return Response.status(Response.Status.NOT_FOUND)
+                        .entity("{\"message\":\"Target user not found.\"}").build();
+            }
+
+            Entity updatedUser = Entity.newBuilder(user)
+                    .set("user_visibility", request.newVisibility.toUpperCase())
+                    .build();
+
+            datastore.put(updatedUser);
+
+            LOG.info("Visibility changed for user: " + targetUser + " to " + request.newVisibility);
+            JsonObject response = new JsonObject();
+            response.addProperty("message", "Account visibility for " + targetUser + " updated to " + request.newVisibility + ".");
+        }
+
+        // Return the response
+        JsonObject response = new JsonObject();
+        response.addProperty("message", "Account visibility updated successfully.");
+
+            return Response.ok(response.toString()).build();
+        }
+
+    @POST
+    @Path("/block")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response blockAccount(BlockAccountRequest request,
+                                 @CookieParam("session::apdc") Cookie cookie,
+                                 @HeaderParam("Authorization") String authHeader) {
+
+        String token = extractJWT(cookie, authHeader);
+        if (token == null || !JWTToken.validateJWT(token)) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Invalid or expired session.\"}").build();
+        }
+
+        if (!request.valid()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("{\"message\":\"Invalid target username.\"}").build();
+        }
+
+        DecodedJWT jwt = JWTToken.extractJWT(token);
+        String requester = jwt.getSubject();
+        String role = jwt.getClaim("role").asString();
+
+        // Only high-level roles can block accounts
+        if (!Roles.is(role, Roles.SYSADMIN, Roles.SYSBO, Roles.SGVBO, Roles.SDVBO)) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity("{\"message\":\"Permission denied.\"}").build();
+        }
+
+        Key userKey = datastore.newKeyFactory().setKind("User").newKey(request.targetUsername);
+        Entity targetUser = datastore.get(userKey);
+
+        if (targetUser == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("{\"message\":\"User not found.\"}").build();
+        }
+
+        // Prevent blocking SYSADMINs or yourself
+        String targetRole = targetUser.getString("user_role");
+        if (Roles.is(targetRole, Roles.SYSADMIN) || requester.equals(request.targetUsername)) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity("{\"message\":\"Cannot block this account.\"}").build();
+        }
+
+        Entity updatedUser = Entity.newBuilder(targetUser)
+                .set("user_account_state", "BLOCKED")
+                .build();
+        datastore.put(updatedUser);
+
+        LOG.info("User " + request.targetUsername + " blocked by " + requester);
+        JsonObject response = new JsonObject();
+        response.addProperty("message", "User " + request.targetUsername + " was blocked successfully.");
+
+        return Response.ok(response.toString()).build();
+    }
+
+}
 
 
 
