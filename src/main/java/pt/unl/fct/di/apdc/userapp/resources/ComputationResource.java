@@ -42,6 +42,7 @@ import pt.unl.fct.di.apdc.userapp.util.ChangeVisibility;
 import pt.unl.fct.di.apdc.userapp.util.ForceLogout;
 import pt.unl.fct.di.apdc.userapp.util.JWTToken;
 import pt.unl.fct.di.apdc.userapp.util.RemoveAccount;
+import pt.unl.fct.di.apdc.userapp.util.RolePermissions;
 import pt.unl.fct.di.apdc.userapp.util.Roles;
 
 
@@ -69,45 +70,43 @@ public class ComputationResource {
     @Path("/user/{username}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response viewUser(@PathParam("username") String targetUsername,
-                             @CookieParam("session::apdc") Cookie cookie,
-                             @HeaderParam("Authorization") String authHeader) {
-    
+                            @CookieParam("session::apdc") Cookie cookie,
+                            @HeaderParam("Authorization") String authHeader) {
+
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token)) {
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity("{\"message\":\"Invalid or expired session.\"}").build();
         }
-    
+
         DecodedJWT jwt = JWTToken.extractJWT(token);
         if (jwt == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity("{\"message\":\"Failed to decode token.\"}").build();
         }
-    
-        String requesterUsername = jwt.getSubject();
         String requesterRole = jwt.getClaim("role").asString();
-    
+
         if (!Roles.isValidRole(requesterRole)) {
             return Response.status(Response.Status.FORBIDDEN)
                     .entity("{\"message\":\"Invalid role.\"}").build();
         }
-    
+
         if (targetUsername == null || targetUsername.isBlank()) {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("{\"message\":\"Missing target username.\"}").build();
         }
-    
+
         Key userKey = datastore.newKeyFactory().setKind("User").newKey(targetUsername);
         Entity user = datastore.get(userKey);
         if (user == null) {
             return Response.status(Response.Status.NOT_FOUND)
                     .entity("{\"message\":\"User not found.\"}").build();
         }
-    
+
         String targetRole = user.getString("user_role");
         String targetState = user.getString("user_account_state");
         String targetProfile = user.contains("user_profile") ? user.getString("user_profile") : "";
-    
+
         if (Roles.is(requesterRole, Roles.RU, Roles.VU)) {
             if (!"ATIVADO".equalsIgnoreCase(targetState) ||
                 !"PUBLICO".equalsIgnoreCase(targetProfile) ||
@@ -115,16 +114,17 @@ public class ComputationResource {
                 return Response.status(Response.Status.FORBIDDEN)
                         .entity("{\"message\":\"You do not have permission to view this user.\"}").build();
             }
-        } else if (Roles.is(requesterRole, Roles.ADLU, Roles.PO, Roles.PRBO)) {
-            if (!Roles.is(targetRole, Roles.RU, Roles.VU)) {
-                return Response.status(Response.Status.FORBIDDEN)
-                        .entity("{\"message\":\"You do not have permission to view this user.\"}").build();
-            }
         }
-    
+
+        if (!RolePermissions.canView(requesterRole, targetRole)) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity("{\"message\":\"You do not have permission to view this user.\"}").build();
+        }
+
         Map<String, Object> filteredData = entityToMap(user, requesterRole);
         return Response.ok(g.toJson(filteredData)).build();
     }
+
     
 
     
