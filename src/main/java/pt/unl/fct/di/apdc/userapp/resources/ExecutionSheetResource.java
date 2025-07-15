@@ -1,5 +1,8 @@
 package pt.unl.fct.di.apdc.userapp.resources;
 
+import java.lang.reflect.Type;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -19,6 +22,11 @@ import com.google.cloud.datastore.StringValue;
 import com.google.cloud.datastore.StructuredQuery;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.google.gson.reflect.TypeToken;
 
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.CookieParam;
@@ -64,73 +72,113 @@ public class ExecutionSheetResource {
     @Path("/create")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response createExecutionSheet(@CookieParam("session::apdc") Cookie cookie,
-                                         @HeaderParam("Authorization") String authHeader,
-                                         ExecutionSheetData data) {
+                                        @HeaderParam("Authorization") String authHeader,
+                                        ExecutionSheetData data) {
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token))
             return unauthorized("Invalid session");
-    
+
         DecodedJWT jwt = JWTToken.extractJWT(token);
         if (jwt == null)
             return unauthorized("Failed to decode token");
-    
+
         String role = jwt.getClaim("role").asString();
         String userId = jwt.getSubject();
-    
+
         if (!Roles.PRBO.equalsIgnoreCase(role))
             return forbidden("Only PRBO can create execution sheets");
-    
-        if (data == null || !data.valid())
+
+        if (data == null || data.worksheet_id == null || data.worksheet_id.isBlank())
             return Response.status(Response.Status.BAD_REQUEST)
-                .entity("{\"error\":\"Invalid or incomplete execution sheet data\"}").build();
-    
-        // Obter folha de obra
+                .entity("{\"error\":\"worksheet_id is required\"}").build();
+
         Key wsKey = datastore.newKeyFactory().setKind("WorkSheet").newKey(data.worksheet_id);
         Entity worksheet = datastore.get(wsKey);
         if (worksheet == null)
             return Response.status(Response.Status.NOT_FOUND)
                 .entity("{\"error\":\"Worksheet not found\"}").build();
-    
-        // Obter o service_provider_id do utilizador (PRBO)
-        Key userKey = datastore.newKeyFactory().setKind("User").newKey(userId);
-        Entity userEntity = datastore.get(userKey);
+
+        Entity userEntity = datastore.get(datastore.newKeyFactory().setKind("User").newKey(userId));
         if (userEntity == null || !userEntity.contains("user_employer"))
             return Response.status(Response.Status.BAD_REQUEST)
                 .entity("{\"error\":\"User does not have an associated service provider.\"}").build();
-    
+
         String providerFromUser = userEntity.getString("user_employer");
         String providerFromWS = worksheet.getString("service_provider_id");
-    
         if (!providerFromWS.equals(providerFromUser))
             return forbidden("You cannot create execution sheets for worksheets not assigned to your provider.");
-    
-        // Criar folha de execução
-        String executionId = data.worksheet_id + "-" + UUID.randomUUID();
+
+        String startingDate = worksheet.contains("starting_date") ? worksheet.getString("starting_date") : "";
+        String finishingDate = worksheet.contains("finishing_date") ? worksheet.getString("finishing_date") : "";
+        String observations = worksheet.contains("observations") ? worksheet.getString("observations") : "";
+
+        String operationsJson = worksheet.contains("operations") ? worksheet.getString("operations") : "[]";
+        String polygonsJson = worksheet.contains("features") ? worksheet.getString("features") : "[]";
+
+        JsonArray features = JsonParser.parseString(polygonsJson).getAsJsonArray();
+        JsonArray opsArray = JsonParser.parseString(operationsJson).getAsJsonArray();
+
+        Map<String, Integer> operationCodeToId = new HashMap<>();
+        int idCounter = 1;
+        for (JsonElement op : opsArray) {
+            JsonObject opObj = op.getAsJsonObject();
+            if (!opObj.has("operation_code")) continue;
+            String code = opObj.get("operation_code").getAsString();
+            operationCodeToId.put(code, idCounter++);
+        }
+
+        List<ExecutionSheetData.PolygonOperations> polyOpsList = new ArrayList<>();
+        for (JsonElement f : features) {
+            JsonObject feature = f.getAsJsonObject();
+            JsonObject props = feature.getAsJsonObject("properties");
+            if (!props.has("polygon_id")) continue;
+
+            int polygonId = props.get("polygon_id").getAsInt();
+            List<ExecutionSheetData.PolygonOperation> polygonOps = new ArrayList<>();
+
+            for (Map.Entry<String, Integer> entry : operationCodeToId.entrySet()) {
+                ExecutionSheetData.PolygonOperation po = new ExecutionSheetData.PolygonOperation();
+                po.operation_code = entry.getKey();
+                po.operation_id = entry.getValue();
+                po.status = "nao_iniciado";
+                polygonOps.add(po);
+            }
+
+            ExecutionSheetData.PolygonOperations polyOps = new ExecutionSheetData.PolygonOperations();
+            polyOps.polygon_id = polygonId;
+            polyOps.operations = polygonOps;
+            polyOpsList.add(polyOps);
+        }
+
+        String polyOpsJson = g.toJson(polyOpsList);
+
+        // ID da ExecutionSheet igual ao ID da WorkSheet
+        String executionId = data.worksheet_id;
         Key execKey = datastore.newKeyFactory().setKind("ExecutionSheet").newKey(executionId);
-    
+
         Entity.Builder builder = Entity.newBuilder(execKey)
             .set("worksheet_id", data.worksheet_id)
             .set("created_by", userId)
             .set("created_at", System.currentTimeMillis())
-            .set("status", "por_atribuir")
-            .set("starting_date", nvl(data.starting_date))
-            .set("finishing_date", nvl(data.finishing_date, ""))
-            .set("last_activity_date", nvl(data.last_activity_date, ""))
-            .set("observations", nvl(data.observations, ""))
-            .set("operations", g.toJson(data.operations))
-            .set("polygons_operations", StringValue.newBuilder(g.toJson(data.polygons_operations)).setExcludeFromIndexes(true).build());
-    
+            .set("starting_date", startingDate)
+            .set("finishing_date", finishingDate)
+            .set("observations", observations)
+            .set("operations", operationsJson)
+            .set("polygons_operations", StringValue.newBuilder(polyOpsJson).setExcludeFromIndexes(true).build());
+
         datastore.put(builder.build());
-    
+
+
         return Response.ok("{\"message\":\"Execution sheet created.\"}").build();
     }
-    
+
     @POST
     @Path("/assign")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response assignOperationToOperator(@CookieParam("session::apdc") Cookie cookie,
                                             @HeaderParam("Authorization") String authHeader,
                                             ExecutionSheetData data) {
+
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token)) return unauthorized("Invalid session");
 
@@ -143,84 +191,116 @@ public class ExecutionSheetResource {
         if (!Roles.PRBO.equalsIgnoreCase(role))
             return forbidden("Only PRBO can assign operations");
 
-        if (data == null || data.polygons_operations == null)
+        if (data == null || data.worksheet_id == null || data.polygons_operations == null)
             return Response.status(Response.Status.BAD_REQUEST)
-                .entity("{\"error\":\"Invalid execution sheet data\"}").build();
+                    .entity("{\"error\":\"Invalid execution sheet data\"}").build();
 
-        // Validar que o PRBO está a trabalhar sobre uma folha da sua entidade
         Entity userEntity = datastore.get(datastore.newKeyFactory().setKind("User").newKey(userId));
         if (userEntity == null || !userEntity.contains("user_employer"))
             return Response.status(Response.Status.BAD_REQUEST)
-                .entity("{\"error\":\"PRBO does not have an associated employer.\"}").build();
+                    .entity("{\"error\":\"PRBO does not have an associated employer.\"}").build();
 
         String employer = userEntity.getString("user_employer");
 
+        // Verificar folha de obra
         Entity worksheet = datastore.get(datastore.newKeyFactory().setKind("WorkSheet").newKey(data.worksheet_id));
         if (worksheet == null)
             return Response.status(Response.Status.NOT_FOUND)
-                .entity("{\"error\":\"Worksheet not found\"}").build();
+                    .entity("{\"error\":\"Worksheet not found\"}").build();
 
-        String worksheetProvider = worksheet.getString("service_provider_id");
-        if (!employer.equals(worksheetProvider))
+        if (!employer.equals(worksheet.getString("service_provider_id")))
             return forbidden("You cannot assign operations for a worksheet outside your organization.");
 
-        // Ciclo de atribuição
+        // Buscar folha de execução
+        Key execKey = datastore.newKeyFactory().setKind("ExecutionSheet").newKey(data.worksheet_id);
+        Entity execSheet = datastore.get(execKey);
+        if (execSheet == null)
+            return Response.status(Response.Status.NOT_FOUND).entity("{\"error\":\"Execution sheet not found\"}").build();
+
+        Type listType = new TypeToken<List<ExecutionSheetData.PolygonOperations>>() {}.getType();
+        List<ExecutionSheetData.PolygonOperations> sheetData =
+                g.fromJson(execSheet.getString("polygons_operations"), listType);
+
+        int assignedCount = 0;
+        List<String> debugOutput = new ArrayList<>();
+
         for (ExecutionSheetData.PolygonOperations poly : data.polygons_operations) {
             int polygonId = poly.polygon_id;
+
             for (ExecutionSheetData.PolygonOperation op : poly.operations) {
+                if (op.operator_username == null || op.operator_username.isBlank()) {
+                    debugOutput.add("⚠️ Missing operator_username for operation " + op.operation_code + " in polygon " + polygonId);
+                    continue;
+                }
 
                 // Validar operador
-                if (op.operator_username == null || op.operator_username.isBlank()) {
-                    return Response.status(Response.Status.BAD_REQUEST)
-                        .entity("{\"error\":\"Missing operator_username for assignment.\"}").build();
-                }
-
-                // Procurar utilizador pelo username (como Key)
                 Key operatorKey = datastore.newKeyFactory().setKind("User").newKey(op.operator_username);
                 Entity operator = datastore.get(operatorKey);
-
                 if (operator == null) {
-                    return Response.status(Response.Status.BAD_REQUEST)
-                        .entity("{\"error\":\"Operator username not found: " + op.operator_username + "\"}").build();
+                    debugOutput.add("❌ Operator not found: " + op.operator_username);
+                    continue;
                 }
-
                 if (!Roles.PO.equalsIgnoreCase(operator.getString("user_role"))) {
-                    return Response.status(Response.Status.BAD_REQUEST)
-                        .entity("{\"error\":\"User '" + op.operator_username + "' is not a PO.\"}").build();
+                    debugOutput.add("❌ User " + op.operator_username + " is not a PO.");
+                    continue;
                 }
-
                 if (!operator.getString("user_employer").equals(employer)) {
-                    return forbidden("Cannot assign operator '" + op.operator_username + "' outside your organization.");
+                    debugOutput.add("❌ Operator " + op.operator_username + " not from your organization.");
+                    continue;
                 }
 
-                // Criar entidade de atribuição
-                String compositeKey = data.worksheet_id + ":" + op.operation_code + ":" + polygonId;
-                Key key = datastore.newKeyFactory().setKind("ExecutionAssignment").newKey(compositeKey);
+                boolean updated = false;
 
-                Entity entity = Entity.newBuilder(key)
-                    .set("worksheet_id", data.worksheet_id)
-                    .set("operation_code", op.operation_code)
-                    .set("polygon_id", polygonId)
-                    .set("operator_username", op.operator_username)
-                    .set("status", op.status != null ? op.status : "atribuido")
-                    .set("assigned_at", System.currentTimeMillis())
-                    .build();
+                for (ExecutionSheetData.PolygonOperations sheetPoly : sheetData) {
+                    if (sheetPoly.polygon_id == polygonId) {
+                        for (ExecutionSheetData.PolygonOperation sheetOp : sheetPoly.operations) {
+                            if (sheetOp.operation_code != null &&
+                                sheetOp.operation_code.equalsIgnoreCase(op.operation_code)) {
 
-                datastore.put(entity);
+                                sheetOp.operator_username = op.operator_username;
+                                sheetOp.status = "atribuido";
+                                assignedCount++;
+                                updated = true;
+                                debugOutput.add("✅ Assigned " + op.operator_username + " to " + op.operation_code + " in polygon " + polygonId);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (!updated) {
+                    debugOutput.add("⚠️ Operation " + op.operation_code + " in polygon " + polygonId + " not found.");
+                }
             }
         }
 
-        return Response.ok("{\"message\":\"Assignments saved.\"}").build();
+        // Regravar a folha com dados atualizados
+        Entity updatedExecSheet = Entity.newBuilder(execSheet.getKey())
+                .set("worksheet_id", execSheet.getString("worksheet_id"))
+                .set("created_by", execSheet.getString("created_by"))
+                .set("created_at", execSheet.getLong("created_at"))
+                .set("starting_date", execSheet.getString("starting_date"))
+                .set("finishing_date", execSheet.getString("finishing_date"))
+                .set("observations", execSheet.getString("observations"))
+                .set("operations", execSheet.getString("operations"))
+                .set("polygons_operations", StringValue.newBuilder(g.toJson(sheetData)).setExcludeFromIndexes(true).build())
+                .build();
+        datastore.put(updatedExecSheet);
+
+        JsonObject response = new JsonObject();
+        response.addProperty("message", assignedCount + " assignments saved.");
+        response.add("debug", g.toJsonTree(debugOutput));
+
+        return Response.ok(g.toJson(response)).build();
     }
 
-
-    
     @POST
     @Path("/startActivity")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response startActivity(@CookieParam("session::apdc") Cookie cookie,
                                 @HeaderParam("Authorization") String authHeader,
                                 ExecutionSheetData data) {
+
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token)) return unauthorized("Invalid session");
 
@@ -229,34 +309,93 @@ public class ExecutionSheetResource {
 
         String role = jwt.getClaim("role").asString();
         String user = jwt.getSubject();
+
         if (!Roles.PO.equalsIgnoreCase(role)) return forbidden("Only PO can start activities");
 
         if (data == null || data.worksheet_id == null || data.polygons_operations == null)
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("{\"error\":\"Invalid execution sheet data\"}").build();
 
-        for (ExecutionSheetData.PolygonOperations poly : data.polygons_operations) {
-            int polygonId = poly.polygon_id;
-            for (ExecutionSheetData.PolygonOperation op : poly.operations) {
-                Key actKey = datastore.allocateId(datastore.newKeyFactory().setKind("ExecutionActivity").newKey());
+        Key execKey = datastore.newKeyFactory().setKind("ExecutionSheet").newKey(data.worksheet_id);
+        Entity execSheet = datastore.get(execKey);
+        if (execSheet == null)
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("{\"error\":\"Execution sheet not found\"}").build();
 
-                op.activity_id = String.valueOf(actKey.getId());
+        Type listType = new TypeToken<List<ExecutionSheetData.PolygonOperations>>() {}.getType();
+        List<ExecutionSheetData.PolygonOperations> sheetData =
+                g.fromJson(execSheet.getString("polygons_operations"), listType);
 
-                Entity activity = Entity.newBuilder(actKey)
-                        .set("worksheet_id", data.worksheet_id)
-                        .set("operation_code", op.operation_code)
-                        .set("polygon_id", polygonId)
-                        .set("operator_id", user)
-                        .set("start_time", System.currentTimeMillis())
-                        .set("status", "em_execucao")
-                        .build();
+        int startedCount = 0;
+        List<String> debugOutput = new ArrayList<>();
+        String now = LocalDateTime.now().toString();
+        String today = LocalDate.now().toString();
 
-                datastore.put(activity);
+        for (ExecutionSheetData.PolygonOperations inputPoly : data.polygons_operations) {
+            for (ExecutionSheetData.PolygonOperation inputOp : inputPoly.operations) {
+                boolean found = false;
+                for (ExecutionSheetData.PolygonOperations sheetPoly : sheetData) {
+                    if (sheetPoly.polygon_id == inputPoly.polygon_id) {
+                        for (ExecutionSheetData.PolygonOperation sheetOp : sheetPoly.operations) {
+                            if (sheetOp.operation_code.equals(inputOp.operation_code)) {
+                                if (!user.equals(sheetOp.operator_username)) {
+                                    debugOutput.add("⛔ " + inputOp.operation_code + " not assigned to you.");
+                                    continue;
+                                }
+
+                                sheetOp.status = "em_execucao";
+                                if (sheetOp.starting_date == null) sheetOp.starting_date = today;
+                                sheetOp.last_activity_date = today;
+
+                                ExecutionSheetData.Activity activity = new ExecutionSheetData.Activity();
+                                activity.activity_id = UUID.randomUUID().toString();
+                                activity.operator_username = user;
+                                activity.start_time = now;
+                                activity.observations = inputOp.observations;
+                                activity.photo_urls = inputOp.photo_urls;
+                                activity.gps_track = (inputOp.tracks != null && !inputOp.tracks.isEmpty())
+                                        ? inputOp.tracks.get(0) : null;
+
+                                if (sheetOp.activities == null)
+                                    sheetOp.activities = new ArrayList<>();
+                                sheetOp.activities.add(activity);
+
+                                debugOutput.add("✅ Started activity " + inputOp.operation_code + " in polygon " + inputPoly.polygon_id);
+                                startedCount++;
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (!found)
+                    debugOutput.add("❌ Operation " + inputOp.operation_code + " not found for polygon " + inputPoly.polygon_id);
             }
         }
 
-        return Response.ok(g.toJson(data)).build(); 
+        // Guardar alterações na ExecutionSheet
+        Entity updatedExecSheet = Entity.newBuilder(execSheet.getKey())
+                .set("worksheet_id", execSheet.getString("worksheet_id"))
+                .set("created_by", execSheet.getString("created_by"))
+                .set("created_at", execSheet.getLong("created_at"))
+                .set("starting_date", execSheet.getString("starting_date"))
+                .set("finishing_date", execSheet.getString("finishing_date"))
+                .set("observations", execSheet.getString("observations"))
+                .set("operations", execSheet.getString("operations"))
+                .set("polygons_operations", StringValue.newBuilder(g.toJson(sheetData)).setExcludeFromIndexes(true).build())
+                .build();
+
+        datastore.put(updatedExecSheet);
+
+        JsonObject response = new JsonObject();
+        response.addProperty("message", startedCount + " activity(ies) started.");
+        response.add("debug", g.toJsonTree(debugOutput));
+        return Response.ok(g.toJson(response)).build();
     }
+
+    
+    
 
     @POST
     @Path("/stopActivity")
@@ -264,6 +403,7 @@ public class ExecutionSheetResource {
     public Response stopActivity(@CookieParam("session::apdc") Cookie cookie,
                                 @HeaderParam("Authorization") String authHeader,
                                 ExecutionSheetData data) {
+
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token)) return unauthorized("Invalid session");
 
@@ -271,43 +411,98 @@ public class ExecutionSheetResource {
         if (jwt == null) return unauthorized("Failed to decode token");
 
         String role = jwt.getClaim("role").asString();
-        if (!Roles.PO.equalsIgnoreCase(role))
-            return forbidden("Only PO can stop activities");
+        String user = jwt.getSubject();
 
-        if (data == null || data.polygons_operations == null)
+        if (!Roles.PO.equalsIgnoreCase(role)) return forbidden("Only PO can stop activities");
+
+        if (data == null || data.worksheet_id == null || data.polygons_operations == null)
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("{\"error\":\"Invalid execution sheet data\"}").build();
 
-        int updates = 0;
+        Key execKey = datastore.newKeyFactory().setKind("ExecutionSheet").newKey(data.worksheet_id);
+        Entity execSheet = datastore.get(execKey);
+        if (execSheet == null)
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("{\"error\":\"Execution sheet not found\"}").build();
 
-        for (ExecutionSheetData.PolygonOperations poly : data.polygons_operations) {
-            for (ExecutionSheetData.PolygonOperation op : poly.operations) {
-                if (op.activity_id == null || op.activity_id.isBlank()) continue;
+        Type listType = new TypeToken<List<ExecutionSheetData.PolygonOperations>>() {}.getType();
+        List<ExecutionSheetData.PolygonOperations> sheetData =
+                g.fromJson(execSheet.getString("polygons_operations"), listType);
 
-                Key key;
-                try {
-                    key = datastore.newKeyFactory()
-                            .setKind("ExecutionActivity")
-                            .newKey(Long.parseLong(op.activity_id));
-                } catch (NumberFormatException e) {
-                    continue; 
+        int stoppedCount = 0;
+        List<String> debugOutput = new ArrayList<>();
+        String now = LocalDateTime.now().toString();
+        String today = LocalDate.now().toString();
+
+        for (ExecutionSheetData.PolygonOperations inputPoly : data.polygons_operations) {
+            for (ExecutionSheetData.PolygonOperation inputOp : inputPoly.operations) {
+                boolean found = false;
+                for (ExecutionSheetData.PolygonOperations sheetPoly : sheetData) {
+                    if (sheetPoly.polygon_id == inputPoly.polygon_id) {
+                        for (ExecutionSheetData.PolygonOperation sheetOp : sheetPoly.operations) {
+                            if (sheetOp.operation_code.equals(inputOp.operation_code)) {
+                                if (!user.equals(sheetOp.operator_username)) {
+                                    debugOutput.add("⛔ Operation " + inputOp.operation_code + " not assigned to you.");
+                                    continue;
+                                }
+
+                                if (sheetOp.activities == null || sheetOp.activities.isEmpty()) {
+                                    debugOutput.add("❌ No activities to stop for " + inputOp.operation_code + ".");
+                                    continue;
+                                }
+
+                                // Procurar a última atividade sem end_time
+                                ExecutionSheetData.Activity lastActivity = null;
+                                for (int i = sheetOp.activities.size() - 1; i >= 0; i--) {
+                                    ExecutionSheetData.Activity act = sheetOp.activities.get(i);
+                                    if (user.equals(act.operator_username) && act.end_time == null) {
+                                        lastActivity = act;
+                                        break;
+                                    }
+                                }
+
+                                if (lastActivity == null) {
+                                    debugOutput.add("❌ No open activity found for user " + user + " in operation " + inputOp.operation_code);
+                                    continue;
+                                }
+
+                                lastActivity.end_time = now;
+                                sheetOp.last_activity_date = today;
+                                stoppedCount++;
+                                found = true;
+                                debugOutput.add("✅ Stopped activity for " + inputOp.operation_code + " in polygon " + inputPoly.polygon_id);
+                                break;
+                            }
+                        }
+                    }
                 }
 
-                Entity existing = datastore.get(key);
-                if (existing == null) continue;
-
-                Entity updated = Entity.newBuilder(existing)
-                        .set("end_time", System.currentTimeMillis())
-                        .set("status", "executado")
-                        .build();
-
-                datastore.put(updated);
-                updates++;
+                if (!found)
+                    debugOutput.add("❌ Operation " + inputOp.operation_code + " not found or not running.");
             }
         }
 
-        return Response.ok("{\"message\":\"" + updates + " activity(ies) completed.\"}").build();
+        // Guardar folha atualizada
+        Entity updatedExecSheet = Entity.newBuilder(execSheet.getKey())
+                .set("worksheet_id", execSheet.getString("worksheet_id"))
+                .set("created_by", execSheet.getString("created_by"))
+                .set("created_at", execSheet.getLong("created_at"))
+                .set("starting_date", execSheet.getString("starting_date"))
+                .set("finishing_date", execSheet.getString("finishing_date"))
+                .set("observations", execSheet.getString("observations"))
+                .set("operations", execSheet.getString("operations"))
+                .set("polygons_operations", StringValue.newBuilder(g.toJson(sheetData)).setExcludeFromIndexes(true).build())
+                .build();
+
+        datastore.put(updatedExecSheet);
+
+        JsonObject response = new JsonObject();
+        response.addProperty("message", stoppedCount + " activity(ies) stopped.");
+        response.add("debug", g.toJsonTree(debugOutput));
+        return Response.ok(g.toJson(response)).build();
     }
+
+
 
 
     @POST

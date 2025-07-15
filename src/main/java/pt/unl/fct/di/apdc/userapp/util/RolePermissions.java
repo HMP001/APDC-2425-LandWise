@@ -1,6 +1,9 @@
 package pt.unl.fct.di.apdc.userapp.util;
 
-import java.util.*;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 
 public class RolePermissions {
 
