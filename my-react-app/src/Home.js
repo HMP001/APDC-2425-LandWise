@@ -8,11 +8,10 @@ import { CreateExecutionSheet } from './ExecutionSheet';
 
 async function Logout(token, navigate) {
   try {
-    const response = await fetch('/rest/login/logout', {
+    const response = await fetch('/rest/logout', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': token
+        'Content-Type': 'application/json'
       }
     });
     CheckRequests(response, token, navigate);
@@ -94,6 +93,12 @@ export default function Home() {
   const [execSheetModal, setExecSheetModal] = useState(null);
   const [execSheetLoading, setExecSheetLoading] = useState(false);
   const [execSheetError, setExecSheetError] = useState(null);
+
+  // --- New state for verify account modal ---
+  const [verifyAccountModal, setVerifyAccountModal] = useState(false);
+  const [verifyAccountResult, setVerifyAccountResult] = useState(null);
+  const [verifyAccountLoading, setVerifyAccountLoading] = useState(false);
+  const [verifyAccountError, setVerifyAccountError] = useState(null);
 
   const { username, photo, role, token } = JSON.parse(
     sessionStorage.getItem('userInfo') ||
@@ -205,10 +210,10 @@ export default function Home() {
     { label: 'Settings', onClick: () => navigate('/settings') },
     { label: 'Change Password', onClick: () => navigate('/user/changePassword') },
     { label: 'Change Role', onClick: () => navigate('/user/changeRole'), show: role === 'SYSADMIN' || role === 'SYSBO' },
-    { label: 'Change State', onClick: () => navigate('/user/changeState'), show: role === 'SYSADMIN' || role === 'SYSBO' },
     { label: 'List Users', onClick: () => navigate('/user/listUsers'), show: role === 'SYSADMIN' || role === 'SYSBO' },
-    { label: 'Force Logout', onClick: () => navigate('/admin/forcelogout'), show: role === 'SYSADMIN' || role === 'SYSBO' },
-    { label: 'Admin Page', onClick: () => navigate('/admin'), show: role === 'SYSADMIN' || role === 'SYSBO' },
+    { label: 'Request Account Removal', onClick: () => requestAccountRemoval(token, navigate), show: role !== 'VU' },
+    { label: 'Verify Account State', onClick: () => setVerifyAccountModal(true) },
+    { label: 'Admin Page', onClick: () => navigate('/admin'), show: role === 'SYSADMIN' || role === 'SYSBO' }
   ];
 
   const worksheetButtons = [
@@ -223,7 +228,7 @@ export default function Home() {
 
   // Execution sheet buttons for roles with access
   const execSheetButtons = [
-    { label: 'View Execution Sheet', onClick: () => setExecSheetModal('view'), show: role === 'SYSADMIN' || role === 'SYSBO' || role === 'SMBO' },
+    { label: 'View Execution Sheet', onClick: () => setExecSheetModal('view'), show: role === 'SYSADMIN' || role === 'SYSBO' || role === 'SMBO' || role === 'PRBO' || role === 'SDVBO' },
     { label: 'Create Execution Sheet', onClick: () => setExecSheetModal('create'), show: role === 'PRBO' },
     { label: 'Export Execution Sheet', onClick: () => setExecSheetModal('export'), show: role === 'SDVBO' },
     { label: 'Assign Operation to Operator', onClick: () => setExecSheetModal('assign'), show: role === 'PRBO' },
@@ -252,7 +257,7 @@ export default function Home() {
           {userButtons.filter(btn => btn.show === undefined || btn.show).map(btn => (
             <button key={btn.label} className="btn btn-primary" onClick={btn.onClick}>{btn.label}</button>
           ))}
-          {(role === 'SYSADMIN' || role === 'SYSBO' || role === 'SMBO') && (
+          {(role === 'SYSADMIN' || role === 'SYSBO' || role === 'SMBO' || role === 'PRBO') && (
             <>
               <h3>Worksheets</h3>
               {worksheetButtons.filter(btn => btn.show).map(btn => (
@@ -294,6 +299,22 @@ export default function Home() {
             error={execSheetError}
             setError={setExecSheetError}
             navigate={navigate}
+          />
+        )}
+        {verifyAccountModal && (
+          <VerifyAccountModal
+            onClose={() => {
+              setVerifyAccountModal(false);
+              setVerifyAccountResult(null);
+              setVerifyAccountError(null);
+            }}
+            token={token}
+            result={verifyAccountResult}
+            setResult={setVerifyAccountResult}
+            loading={verifyAccountLoading}
+            setLoading={setVerifyAccountLoading}
+            error={verifyAccountError}
+            setError={setVerifyAccountError}
           />
         )}
       </div>
@@ -362,6 +383,8 @@ function SelectWorksheet({ onClose, mode }) {
 // --- New component for execution sheet selection/creation ---
 function SelectExecutionSheet({ onClose, mode, loading, setLoading, error, setError, navigate }) {
   const [id, setId] = useState('');
+  const [assignUsername, setAssignUsername] = useState('');
+  const [assignKey, setAssignKey] = useState('');
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -372,6 +395,39 @@ function SelectExecutionSheet({ onClose, mode, loading, setLoading, error, setEr
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (mode === 'assign') {
+      if (!id.trim() || !assignUsername.trim() || !assignKey.trim()) {
+        setError("Please fill all fields.");
+        return;
+      }
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await fetch('/rest/executionsheet/assign', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            execSheetId: id.trim(),
+            username: assignUsername.trim(),
+            polygonOperationKey: assignKey.trim()
+          })
+        });
+        if (response.ok) {
+          setError(null);
+          alert("Assignment successful.");
+          onClose();
+        } else {
+          const msg = await response.text();
+          setError("Failed to assign: " + msg);
+        }
+      } catch (e) {
+        setError("Error: " + e);
+      }
+      setLoading(false);
+      return;
+    }
     if (id.trim() === '') {
       alert("Please enter a valid Worksheet/Execution Sheet ID.");
       return;
@@ -383,10 +439,7 @@ function SelectExecutionSheet({ onClose, mode, loading, setLoading, error, setEr
         await CreateExecutionSheet(id, null, setError, setLoading, navigate);
       } catch (e) { }
     } else if (mode === 'export') {
-      // Export logic (navigate or download)
       navigate(`/executionsheet/${id}?export=1`);
-    } else if (mode === 'assign') {
-      navigate(`/executionsheet/${id}/assign`);
     } else if (mode === 'start') {
       navigate(`/executionsheet/${id}/start`);
     } else if (mode === 'stop') {
@@ -431,12 +484,36 @@ function SelectExecutionSheet({ onClose, mode, loading, setLoading, error, setEr
             onChange={(e) => setId(e.target.value)}
             ref={inputRef}
             required
-            autoFocus
             className="form-input"
             disabled={loading}
+            autoFocus
           />
+          {mode === 'assign' && (
+            <>
+              <label htmlFor="assignUsername">Username to Assign:</label>
+              <input
+                type="text"
+                id="assignUsername"
+                value={assignUsername}
+                onChange={e => setAssignUsername(e.target.value)}
+                required
+                className="form-input"
+                disabled={loading}
+              />
+              <label htmlFor="assignKey">Polygon-Operation Key:</label>
+              <input
+                type="text"
+                id="assignKey"
+                value={assignKey}
+                onChange={e => setAssignKey(e.target.value)}
+                required
+                className="form-input"
+                disabled={loading}
+              />
+            </>
+          )}
           <button type="submit" className="btn btn-primary btn-small" disabled={loading}>
-            {loading ? 'Processing...' : labelMap[mode] || 'Go'}
+            {loading ? (mode === 'assign' ? 'Assigning...' : 'Processing...') : (labelMap[mode] || 'Go')}
           </button>
           <button type="button" className="btn btn-danger btn-small" onClick={onClose} disabled={loading}>
             Cancel
@@ -447,4 +524,103 @@ function SelectExecutionSheet({ onClose, mode, loading, setLoading, error, setEr
     </div>
   );
 }
+
+// --- New component for verifying account state ---
+function VerifyAccountModal({ onClose, token, result, setResult, loading, setLoading, error, setError }) {
+  const [input, setInput] = useState('');
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (inputRef.current) inputRef.current.focus();
+  }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setResult(null);
+    setError(null);
+    if (!input.trim()) {
+      setError("Please enter a username or email.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await fetch('/rest/user/state', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token
+        },
+        body: JSON.stringify({ identifier: input.trim() })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setResult(data);
+      } else {
+        const msg = await response.text();
+        setError("Failed to fetch account state: " + msg);
+      }
+    } catch (err) {
+      setError("Error: " + err);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-content">
+        <h2>Verify Account State</h2>
+        <form onSubmit={handleSubmit}>
+          <label htmlFor="verifyAccountInput">Username:</label>
+          <input
+            id="verifyAccountInput"
+            type="text"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            ref={inputRef}
+            required
+            className="form-input"
+            disabled={loading}
+            autoFocus
+          />
+          <button type="submit" className="btn btn-primary btn-small" disabled={loading}>
+            {loading ? "Verifying..." : "Verify"}
+          </button>
+          <button type="button" className="btn btn-danger btn-small" onClick={onClose} disabled={loading}>
+            Cancel
+          </button>
+        </form>
+        {error && <div className="error-message" style={{ marginTop: 12 }}>{error}</div>}
+        {result && (
+          <div className="verify-account-result" style={{ marginTop: 16, background: "#23272f", padding: 12, borderRadius: 8 }}>
+            <div><b>Account:</b> {result.username || result.email || '-'}</div>
+            <div><b>Current State:</b> {result.state || '-'}</div>
+            {/* Optionally show more info */}
+            {result.info && <div><b>Info:</b> {result.info}</div>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+async function requestAccountRemoval(token, navigate) {
+  if (!window.confirm("Are you sure you want to request account removal? This action cannot be undone.")) return;
+  try {
+    const response = await fetch('/rest/user/requestRemoval', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    if (response.ok) {
+      alert("Account removal requested successfully. You will be logged out.");
+      logoutAndRedirect(navigate);
+    } else {
+      const msg = await response.text();
+      alert("Failed to request account removal: " + msg);
+    }
+  } catch (e) {
+    alert("Error requesting account removal: " + e);
+  }
+};
 

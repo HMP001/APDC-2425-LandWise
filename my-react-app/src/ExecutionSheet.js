@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import './ExecutionSheet.css';
 import CheckRequests from './CheckRequests';
 import { topBar } from './TopBar';
-import { fetchWsNorm } from './WorkSheet';
 
 /**
  * ExecutionSheet Component - UI for viewing and managing execution sheets
@@ -15,6 +14,11 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
   const [selectedPolygon, setSelectedPolygon] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [searchPolygonKey, setSearchPolygonKey] = useState('');
+  const [assignmentState, setAssignmentState] = useState({}); // { [polygonId_operationId]: { username, loading, error, assignedTo } }
+
+  // Add state for operation edits and errors in the summary table
+  const [operationEdits, setOperationEdits] = useState({});
+  const [operationEditErrors, setOperationEditErrors] = useState({});
 
   // Initialize execution sheet data
   useEffect(() => {
@@ -60,7 +64,7 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
           polygon_id: 101,
           operations: [
             {
-              operation_id: 1,
+              operation_code: "PLOWING",
               status: "completed",
               starting_date: "2025-07-01",
               finishing_date: "2025-07-02",
@@ -71,16 +75,37 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
                   type: "LineString",
                   coordinates: [[10.5, 45.2], [10.6, 45.3], [10.7, 45.4]]
                 }
+              ],
+              assigned_to: "alice",
+              activities: [
+                {
+                  activity_id: "act-101-plowing",
+                  type: "plowing",
+                  status: "completed",
+                  started_by: "alice",
+                  started_at: "2025-07-01",
+                  finished_at: "2025-07-02"
+                }
               ]
             },
             {
-              operation_id: 2,
+              operation_code: "SEEDING",
               status: "ongoing",
               starting_date: "2025-07-04",
               finishing_date: null,
-              last_activity_date: "2025-07-05",
               observations: "Seeding 60% complete",
-              tracks: []
+              tracks: [],
+              assigned_to: "bob",
+              activities: [
+                {
+                  activity_id: "act-101-seeding",
+                  type: "seeding",
+                  status: "ongoing",
+                  started_by: "bob",
+                  started_at: "2025-07-04",
+                  finished_at: null
+                }
+              ]
             }
           ]
         },
@@ -88,13 +113,26 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
           polygon_id: 102,
           operations: [
             {
-              operation_id: 1,
-              status: "assigned",
+              operation_code: "PLOWING",
+              status: "unassigned",
               starting_date: null,
               finishing_date: null,
               last_activity_date: null,
               observations: "Scheduled for next week",
-              tracks: []
+              tracks: [],
+              assigned_to: "",
+              activities: []
+            },
+            {
+              operation_code: "SEEDING",
+              status: "unassigned",
+              starting_date: null,
+              finishing_date: null,
+              last_activity_date: null,
+              observations: "",
+              tracks: [],
+              assigned_to: "",
+              activities: []
             }
           ]
         }
@@ -120,20 +158,179 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
     return Math.round((completedOps / polygonOps.operations.length) * 100);
   };
 
+  // When entering edit mode, snapshot original values for summary table
+  useEffect(() => {
+    if (editMode && executionSheet) {
+      const edits = {};
+      executionSheet.operations.forEach((op, idx) => {
+        edits[idx] = { ...op };
+      });
+      setOperationEdits(edits);
+      setOperationEditErrors({});
+    }
+  }, [editMode, executionSheet]);
+
+  // Handle field change in summary table (Operations tab)
+  const handleSummaryOperationFieldChange = (idx, field, value) => {
+    setOperationEdits(prev => ({
+      ...prev,
+      [idx]: { ...prev[idx], [field]: value }
+    }));
+  };
+
   // Handle save operation
-  const handleSave = () => {
-    if (onSave) {
+  const handleSave = async () => {
+    let hasError = false;
+    const errors = {};
+    // Only for summary table (executionSheet.operations) - removed area and percentage fields
+    for (const idx in operationEdits) {
+      const edited = operationEdits[idx];
+      const original = executionSheet.operations[idx];
+      // Check if any field changed - removed 'area_ha_executed', 'area_perc'
+      const fields = ['observations', 'starting_date', 'finishing_date'];
+      let changed = false;
+      for (const field of fields) {
+        if (edited[field] !== original[field]) {
+          changed = true;
+          break;
+        }
+      }
+      if (changed) {
+        try {
+          const res = await fetch('/rest/execution/editOperation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              worksheet_id: executionSheet.id,
+              operation_code: edited.operation_code,
+              observations: edited.observations,
+              starting_date: edited.starting_date,
+              finishing_date: edited.finishing_date
+            })
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            errors[idx] = err.error || 'Failed to edit operation';
+            hasError = true;
+          } else {
+            // Update the main state if successful
+            setExecutionSheet(prev => {
+              const updated = { ...prev };
+              updated.operations[idx] = { ...edited };
+              return updated;
+            });
+          }
+        } catch (e) {
+          errors[idx] = e.message || 'Failed to edit operation';
+          hasError = true;
+        }
+      }
+    }
+    setOperationEditErrors(errors);
+    if (!hasError && onSave) {
       onSave(executionSheet);
     }
     setEditMode(false);
   };
 
+  // Assignment handler (dummy mode support)
+  const handleAssignOperator = async (polygonId, operationCode) => {
+    const key = `${polygonId}_${operationCode}`;
+    const username = assignmentState[key]?.username?.trim();
+    if (!username) return;
+    setAssignmentState(prev => ({
+      ...prev,
+      [key]: { ...prev[key], loading: true, error: null }
+    }));
+
+    // If using dummy, just update local state
+    if (!executionSheetData) {
+      setTimeout(() => {
+        setExecutionSheet(prevSheet => {
+          const updatedSheet = { ...prevSheet };
+          const polygonOps = updatedSheet.polygons_operations.find(po => po.polygon_id === polygonId);
+          if (polygonOps) {
+            const operation = polygonOps.operations.find(op => op.operation_code === operationCode);
+            if (operation) {
+              operation.assigned_to = username;
+              operation.status = "assigned";
+            }
+          }
+          return updatedSheet;
+        });
+        setAssignmentState(prev => ({
+          ...prev,
+          [key]: { ...prev[key], loading: false, error: null, assignedTo: username }
+        }));
+      }, 500);
+      return;
+    }
+
+    try {
+      const res = await fetch('/rest/execution/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          worksheet_id: executionSheet.id,
+          polygon_id: polygonId,
+          operation_code: operationCode,
+          assigned_to: username
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to assign operator');
+      }
+      setAssignmentState(prev => ({
+        ...prev,
+        [key]: { ...prev[key], loading: false, error: null, assignedTo: username }
+      }));
+      // Optionally update executionSheet state to reflect assignment
+    } catch (e) {
+      setAssignmentState(prev => ({
+        ...prev,
+        [key]: { ...prev[key], loading: false, error: e.message, assignedTo: undefined }
+      }));
+    }
+  };
+
+  // Start activity handler (dummy mode support)
+  const handleStartActivity = (polygonId, operationCode, username) => {
+    if (!username) return;
+    if (!executionSheetData) {
+      setExecutionSheet(prevSheet => {
+        const updatedSheet = { ...prevSheet };
+        const polygonOps = updatedSheet.polygons_operations.find(po => po.polygon_id === polygonId);
+        if (polygonOps) {
+          const operation = polygonOps.operations.find(op => op.operation_code === operationCode);
+          if (operation) {
+            const newActivity = {
+              activity_id: `act-${polygonId}-${operationCode}`,
+              type: operationCode.toLowerCase(),
+              status: "ongoing",
+              started_by: username,
+              started_at: new Date().toISOString().split('T')[0],
+              finished_at: null
+            };
+            operation.activities = operation.activities || [];
+            operation.activities.push(newActivity);
+            operation.status = "ongoing";
+            operation.starting_date = newActivity.started_at;
+            operation.assigned_to = username;
+          }
+        }
+        return updatedSheet;
+      });
+    }
+    // For real backend, you would POST to an endpoint
+  };
+
   // Handle operation status update
-  const handleStatusUpdate = (polygonId, operationId, newStatus) => {
+  const handleStatusUpdate = (polygonId, operationCode, newStatus) => {
     const updatedSheet = { ...executionSheet };
     const polygonOps = updatedSheet.polygons_operations.find(po => po.polygon_id === polygonId);
     if (polygonOps) {
-      const operation = polygonOps.operations.find(op => op.operation_id === operationId);
+      const operation = polygonOps.operations.find(op => op.operation_code === operationCode);
       if (operation) {
         operation.status = newStatus;
         operation.last_activity_date = new Date().toISOString().split('T')[0];
@@ -283,19 +480,69 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
                       <td>
                         <span className="operation-code">{operation.operation_code}</span>
                       </td>
-                      <td>{operation.area_ha_executed}</td>
-                      <td>
-                        <div className="progress-bar">
-                          <div
-                            className="progress-fill"
-                            style={{ width: `${operation.area_perc}%` }}
-                          ></div>
-                          <span>{operation.area_perc}%</span>
-                        </div>
-                      </td>
-                      <td>{operation.starting_date}</td>
-                      <td>{operation.finishing_date || 'Ongoing'}</td>
-                      <td>{operation.observations}</td>
+                      {editMode ? (
+                        <>
+                          <td>
+                            <input
+                              type="number"
+                              value={operationEdits[index]?.area_ha_executed ?? operation.area_ha_executed}
+                              disabled={true}
+                              style={{ width: 80, background: '#f8f9fa' }}
+                              title="Area is calculated automatically from activities"
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="number"
+                              value={operationEdits[index]?.area_perc ?? operation.area_perc}
+                              disabled={true}
+                              style={{ width: 60, background: '#f8f9fa' }}
+                              title="Percentage is calculated automatically from activities"
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="date"
+                              value={((operationEdits[index]?.starting_date ?? operation.starting_date) || '')}
+                              onChange={e => handleSummaryOperationFieldChange(index, 'starting_date', e.target.value)}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="date"
+                              value={((operationEdits[index]?.finishing_date ?? operation.finishing_date) || '')}
+                              onChange={e => handleSummaryOperationFieldChange(index, 'finishing_date', e.target.value)}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              value={(operationEdits[index]?.observations ?? operation.observations) || ''}
+                              onChange={e => handleSummaryOperationFieldChange(index, 'observations', e.target.value)}
+                              style={{ width: 180 }}
+                            />
+                            {operationEditErrors[index] && (
+                              <div style={{ color: 'red', fontSize: 12 }}>{operationEditErrors[index]}</div>
+                            )}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td>{operation.area_ha_executed}</td>
+                          <td>
+                            <div className="progress-bar">
+                              <div
+                                className="progress-fill"
+                                style={{ width: `${operation.area_perc}%` }}
+                              ></div>
+                              <span>{operation.area_perc}%</span>
+                            </div>
+                          </td>
+                          <td>{operation.starting_date}</td>
+                          <td>{operation.finishing_date || 'Ongoing'}</td>
+                          <td>{operation.observations}</td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -398,44 +645,146 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
                     </div>
                   </div>
                   <div className="polygon-operations">
-                    {polygonOps.operations.map((operation) => (
-                      <div key={operation.operation_id} className="operation-item">
-                        <div className="operation-info">
-                          <span className="operation-id">Operation #{operation.operation_id}</span>
-                          <span
-                            className="status-badge"
-                            style={{ backgroundColor: getStatusColor(operation.status) }}
-                          >
-                            {operation.status}
-                          </span>
-                        </div>
-                        {editMode && (
-                          <select
-                            value={operation.status}
-                            onChange={(e) => handleStatusUpdate(polygonOps.polygon_id, operation.operation_id, e.target.value)}
-                            className="status-select"
-                          >
-                            <option value="unassigned">Unassigned</option>
-                            <option value="assigned">Assigned</option>
-                            <option value="ongoing">Ongoing</option>
-                            <option value="completed">Completed</option>
-                          </select>
-                        )}
-                        <div className="operation-dates">
-                          {operation.starting_date && (
-                            <small>Started: {operation.starting_date}</small>
-                          )}
-                          {operation.finishing_date && (
-                            <small>Finished: {operation.finishing_date}</small>
-                          )}
-                        </div>
-                        {operation.observations && (
-                          <div className="operation-observations">
-                            <small>{operation.observations}</small>
+                    {polygonOps.operations.map((operation) => {
+                      const key = `${polygonOps.polygon_id}_${operation.operation_code}`;
+                      const assignState = assignmentState[key] || {};
+                      const isCompleted = operation.status === 'completed';
+                      return (
+                        <div key={operation.operation_code} className="operation-item">
+                          <div className="operation-info">
+                            <span className="operation-id">{operation.operation_code}</span>
+                            <span
+                              className="status-badge"
+                              style={{ backgroundColor: getStatusColor(operation.status) }}
+                            >
+                              {operation.status}
+                            </span>
                           </div>
-                        )}
-                      </div>
-                    ))}
+                          {/* Assignment UI */}
+                          {editMode && !isCompleted && (
+                            <div className="assignment-controls">
+                              <input
+                                type="text"
+                                placeholder="Assign username"
+                                value={assignState.username || operation.assigned_to || ''}
+                                onChange={e =>
+                                  setAssignmentState(prev => ({
+                                    ...prev,
+                                    [key]: { ...prev[key], username: e.target.value }
+                                  }))
+                                }
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') {
+                                    handleAssignOperator(polygonOps.polygon_id, operation.operation_code);
+                                  }
+                                }}
+                                onBlur={() => {
+                                  handleAssignOperator(polygonOps.polygon_id, operation.operation_code);
+                                }}
+                                disabled={assignState.loading}
+                                style={{ width: 120 }}
+                              />
+                              <button
+                                className="btn btn-sm btn-primary"
+                                onClick={() => handleAssignOperator(polygonOps.polygon_id, operation.operation_code)}
+                                disabled={assignState.loading || !(assignState.username && assignState.username.trim())}
+                              >
+                                {assignState.loading ? 'Assigning...' : 'Assign'}
+                              </button>
+                              <button
+                                className="btn btn-sm btn-success"
+                                onClick={() => handleStartActivity(
+                                  polygonOps.polygon_id,
+                                  operation.operation_code,
+                                  assignState.username || operation.assigned_to
+                                )}
+                                disabled={!editMode || !(assignState.username || operation.assigned_to)}
+                              >
+                                Start Activity
+                              </button>
+                              {assignState.assignedTo && (
+                                <span className="assignment-feedback" style={{ color: '#28a745' }}>
+                                  Assigned to: {assignState.assignedTo}
+                                </span>
+                              )}
+                              {assignState.error && (
+                                <span className="assignment-feedback" style={{ color: 'red' }}>
+                                  {assignState.error}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {editMode && (
+                            <select
+                              value={operation.status}
+                              onChange={(e) => handleStatusUpdate(polygonOps.polygon_id, operation.operation_code, e.target.value)}
+                              className="status-select"
+                              disabled={isCompleted}
+                            >
+                              <option value="unassigned">Por atribuir</option>
+                              <option value="assigned">Atribuído</option>
+                              <option value="ongoing">Em execução</option>
+                              <option value="completed">Executado</option>
+                            </select>
+                          )}
+                          <div className="operation-dates">
+                            {operation.starting_date && (
+                              <small>Início: {operation.starting_date}</small>
+                            )}
+                            {operation.last_activity_date && (
+                              <small>Última atividade: {operation.last_activity_date}</small>
+                            )}
+                            {operation.finishing_date && (
+                              <small>Conclusão: {operation.finishing_date}</small>
+                            )}
+                          </div>
+                          {/* Commentary for the pair/activity */}
+                          {editMode ? (
+                            <div className="operation-observations">
+                              <input
+                                type="text"
+                                value={operation.observations || ''}
+                                onChange={e => {
+                                  setExecutionSheet(prevSheet => {
+                                    const updatedSheet = { ...prevSheet };
+                                    const polygonOpsEdit = updatedSheet.polygons_operations.find(po => po.polygon_id === polygonOps.polygon_id);
+                                    if (polygonOpsEdit) {
+                                      const opEdit = polygonOpsEdit.operations.find(op => op.operation_code === operation.operation_code);
+                                      if (opEdit) opEdit.observations = e.target.value;
+                                    }
+                                    return updatedSheet;
+                                  });
+                                }}
+                                placeholder="Observações"
+                                style={{ width: 180 }}
+                                disabled={isCompleted}
+                              />
+                            </div>
+                          ) : (
+                            operation.observations && (
+                              <div className="operation-observations">
+                                <small>{operation.observations}</small>
+                              </div>
+                            )
+                          )}
+                          {/* Show activities for testing */}
+                          {operation.activities && operation.activities.length > 0 && (
+                            <div className="operation-activities" style={{ marginTop: 8 }}>
+                              <strong>Activities:</strong>
+                              <ul>
+                                {operation.activities.map(act => (
+                                  <li key={act.activity_id}>
+                                    {act.type} - {act.status} by {act.started_by} at {act.started_at}
+                                    {act.finished_at && `, finished at ${act.finished_at}`}
+                                    {act.observations && <span> | Obs: {act.observations}</span>}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
@@ -452,8 +801,8 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
                 {(() => {
                   const polygonOps = executionSheet.polygons_operations.find(po => po.polygon_id === selectedPolygon);
                   return polygonOps?.operations.map((operation) => (
-                    <div key={operation.operation_id} className="tracking-operation">
-                      <h5>Operation #{operation.operation_id}</h5>
+                    <div key={operation.operation_code} className="tracking-operation">
+                      <h5>{operation.operation_code}</h5>
                       {operation.tracks && operation.tracks.length > 0 ? (
                         <div className="tracks-list">
                           {operation.tracks.map((track, index) => (
@@ -495,79 +844,6 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
 };
 export default ExecutionSheet;
 
-/**function createExecutionSheetFromWorksheet(worksheet) {
-  // Ensure worksheet is normalized
-  const ws = worksheet;
-
-  // Only use features that are polygons
-  const polygons = ws.features && typeof ws.features === 'object'
-    ? Object.values(ws.features)
-      .filter(f => f.geometry && f.geometry.type === "Polygon")
-      .map(f => ({
-        polygon_id: f.properties?.polygon_id || f.properties?.id || f.key || f.id
-      }))
-    : [];
-
-  // Map operations per polygon
-  const operations = Array.isArray(ws.operations) ? ws.operations : [];
-  const polygons_operations = polygons.map(poly => {
-    // Try to find per-polygon operations if present in worksheet
-    let polyOps = [];
-    if (ws.polygons_operations && Array.isArray(ws.polygons_operations)) {
-      const found = ws.polygons_operations.find(po =>
-        String(po.polygon_id) === String(poly.polygon_id || poly.id)
-      );
-      if (found && Array.isArray(found.operations)) {
-        polyOps = found.operations.map(op => ({
-          operation_code: op.operation_code,
-          status: op.status || "unassigned",
-          starting_date: op.starting_date || "",
-          finishing_date: op.finishing_date || "",
-          last_activity_date: op.last_activity_date || "",
-          observations: op.observations || "",
-          tracks: Array.isArray(op.tracks) ? op.tracks : [],
-          activity_id: op.activity_id || ""
-        }));
-      }
-    }
-    // If not found, create default operations for each operation_code
-    if (polyOps.length === 0) {
-      polyOps = operations.map(op => ({
-        operation_code: op.operation_code,
-        status: "unassigned",
-        starting_date: "",
-        finishing_date: "",
-        last_activity_date: "",
-        observations: "",
-        tracks: [],
-        activity_id: ""
-      }));
-    }
-    return {
-      polygon_id: poly.polygon_id || poly.id,
-      operations: polyOps
-    };
-  });
-
-  return {
-    id: ws.id || null, // ID will be assigned by the backend
-    worksheet_id: ws.id || ws.worksheet_id,
-    starting_date: ws.starting_date || "",
-    finishing_date: ws.finishing_date || "",
-    last_activity_date: "",
-    observations: "",
-    operations: operations.map(op => ({
-      operation_code: op.operation_code,
-      area_ha_executed: 0,
-      area_perc: 0,
-      starting_date: "",
-      finishing_date: "",
-      observations: ""
-    })),
-    polygons_operations
-  };
-}*/
-
 export async function CreateExecutionSheet(id, setExecutionSheetData, setError, setLoading, navigate) {
   // Call backend to create execution sheet for worksheet id, then fetch it and navigate to its page
   setLoading && setLoading(true);
@@ -576,7 +852,7 @@ export async function CreateExecutionSheet(id, setExecutionSheetData, setError, 
     const res = await fetch('/rest/execution/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id })
+      body: JSON.stringify({ worksheet_id: id })
     });
     if (!res.ok) throw new Error('Failed to create execution sheet');
     let newId = id;
@@ -668,7 +944,7 @@ export function ViewExecutionSheet() {
             executionSheetData={null}
             onSave={null}
             onClose={() => navigate(-1)}
-            isEditable={false}
+            isEditable={true} // <-- allow editing dummy
           />
         </div>
       </>

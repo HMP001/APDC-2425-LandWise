@@ -10,7 +10,7 @@ import AdminPage from './AdminPage';
 import Login from './Login';
 import Register from './Register';
 import List from './List';
-import { Attributes, ChangePassword, ChangeRole, ChangeState } from './Attributes';
+import { Attributes, ChangePassword, ChangeRole } from './Attributes';
 import WorkSheet, { ViewWorkSheet, ListWorkSheets, UploadWorkSheet, GenericListWorkSheets, GenericViewWorkSheet } from './WorkSheet';
 import { ViewExecutionSheet } from './ExecutionSheet';
 import Media from './Media';
@@ -39,7 +39,6 @@ function App() {
           <Route path="/user/profile" element={<Attributes />} />
           <Route path="/user/changePassword" element={<ChangePassword />} />
           <Route path="/user/changeRole" element={<ChangeRole />} />
-          <Route path="/user/changeState" element={<ChangeState />} />
           <Route path="/worksheet/create" element={<WorkSheet mode="create" />} />
           <Route path="/worksheet/upload" element={<UploadWorkSheet />} />
           <Route path="/worksheet/edit/:id" element={<WorkSheet mode="edit" />} />

@@ -373,3 +373,17 @@ body,
   color: #e57373;
   font-size: 1.2em;
 }
+
+.modal-content {
+  min-width: 400px;
+  width: 400px;
+  margin: 0 auto;
+  padding: 24px 20px;
+  border-radius: 10px;
+  box-sizing: border-box;
+}
+
+.form-input {
+  width: 100%;
+  box-sizing: border-box;
+}

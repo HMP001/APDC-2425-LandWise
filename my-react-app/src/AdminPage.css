@@ -14,15 +14,139 @@
 
 .admin-page form {
   margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  justify-content: center;
 }
 
-.admin-page input[type="text"] {
-  margin: 0 0.5rem;
-  padding: 0.5rem;
-  border-radius: 5px;
-  border: 1px solid #ccc;
+.admin-page form>label {
+  white-space: nowrap;
 }
 
-.admin-page .btn {
-  margin: 0.5rem;
+.admin-page form>input[type="text"],
+.admin-page form>select {
+  min-width: 180px;
+}
+
+.admin-page form>button {
+  min-width: 140px;
+}
+
+.admin-page .account-action-form {
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+  display: flex;
+}
+
+.admin-page .account-action-form .account-action-row {
+  margin-bottom: 0.5rem;
+}
+
+.admin-page .account-action-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  justify-content: center;
+}
+
+.admin-page .account-action-row label {
+  white-space: nowrap;
+}
+
+.admin-page .account-action-row input[type="text"] {
+  min-width: 180px;
+}
+
+.admin-page .account-action-row select {
+  min-width: 120px;
+}
+
+.admin-page .account-action-form button {
+  min-width: 140px;
+}
+
+.admin-page .filtered-list-group {
+  margin-top: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.admin-page .filtered-list-group .btn {
+  width: 350px;
+}
+
+.admin-page .role-filter-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.admin-page .role-filter-row select {
+  min-width: 120px;
+  flex: none;
+}
+
+.admin-page .role-filter-row button {
+  min-width: 180px;
+}
+
+.admin-page .back-home-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 2rem;
+}
+
+.admin-page .back-home-row .btn {
+  min-width: 180px;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-content {
+  background: #fff;
+  padding: 2rem 2.5rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.18);
+  min-width: 320px;
+  max-width: 90vw;
+  text-align: center;
+}
+
+.row-box {
+  background: #f7f7f7;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+  display: block;
+}
+
+.row-box-flex {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
 }

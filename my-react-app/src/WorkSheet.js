@@ -1285,7 +1285,7 @@ export default function WorkSheet({ mode }) {
         features: Object.values((form.features) || []).map(({ key, ...rest }) => rest)
       };
 
-      const response = await fetch(mode === 'create' ? "/rest/worksheet/create" : "/rest/worksheet/updateStatus", {
+      const response = await fetch(mode === 'create' ? "/rest/worksheet/create" : "/rest/worksheet/edit", {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -1478,7 +1478,7 @@ async function worksheetToGeoJSON(worksheet, crsCode = 'EPSG:4326') {
       try {
         const convertCoords = await convertGeometryCoordinates(feature.geometry.coordinates, feature.geometry.type, 'EPSG:4326', crsCode);
         console.log(`Converted coordinates for feature ${feature.key}:`, convertCoords);
-        const { key, featureWithoutKey } = feature;
+        const { key, ...featureWithoutKey } = feature;
         return {
           ...featureWithoutKey,
           geometry: {
@@ -2582,7 +2582,6 @@ export function DeleteWorkSheet({ worksheetId, onClose }) {
 }
 
 function GenericWorksheetDisplay({ worksheetData, showActions = false, onViewDetails, onClose }) {
-  const navigate = useNavigate();
 
   return (
     <div className="generic-worksheet-content">
@@ -2687,37 +2686,59 @@ export function GenericListWorkSheets() {
   const [worksheets, setWorksheets] = useState([]);
   const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState(null);
-  const [expandedData, setExpandedData] = useState(null);
-  const [loadingExpanded, setLoadingExpanded] = useState(false);
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+
+  // --- Filter state ---
+  const filterOptions = [
+    { label: "Title", value: "title", type: "text" },
+    { label: "Status", value: "status", type: "text" },
+    { label: "AIGP", value: "aigp", type: "text" },
+    { label: "Service Provider ID", value: "serviceProviderId", type: "text" },
+    { label: "Start Date From", value: "startDateFrom", type: "date" },
+    { label: "Start Date To", value: "startDateTo", type: "date" }
+  ];
+  const [filters, setFilters] = useState([]);
+  const [filterCollapsed, setFilterCollapsed] = useState(true);
+  const [selectedFilter, setSelectedFilter] = useState(filterOptions[0].value);
+  const [filterValue, setFilterValue] = useState('');
+  const [limit, setLimit] = useState(50);
+  const [offset, setOffset] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
 
     const fetchWorksheets = async () => {
+      const body = { limit, offset };
+      filters.forEach(filter => {
+        if (filter.value) {
+          body[filter.key] = filter.value;
+        }
+      });
       try {
-        const request = await fetch("/rest/worksheet/list", {
+        const request = await fetch("/rest/worksheet/search", {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({
-            status: null,
-            limit: 50, // Increased limit for generic view
-            offset: 0
-          })
+          body: JSON.stringify(body)
         });
         CheckRequests(request, navigate);
 
         const data = await request.json();
         console.log("Fetched generic worksheets data:", data);
 
-        // For generic list, we only need basic info (ID, title, status)
+        // For generic list, we only need generic info
         const basicWorksheets = data.map(worksheet => ({
           id: worksheet.id,
           title: worksheet.title || '',
-          status: worksheet.status || ''
+          status: worksheet.status || '',
+          starting_date: worksheet.starting_date || '',
+          finishing_date: worksheet.finishing_date || '',
+          issue_date: worksheet.issue_date || '',
+          award_date: worksheet.award_date || '',
+          service_provider_id: worksheet.service_provider_id || '',
+          aigp: normalizeAigpData(worksheet.aigp || {})
         }));
 
         if (isMounted) {
@@ -2735,36 +2756,36 @@ export function GenericListWorkSheets() {
 
     fetchWorksheets();
     return () => { isMounted = false; };
-  }, [navigate]);
+  }, [navigate, filters, limit, offset]);
+
+  const handleAddFilter = () => {
+    if (!filterValue) return;
+    // Overwrite filter with same key
+    setFilters(prev => [
+      ...prev.filter(f => f.key !== selectedFilter),
+      { key: selectedFilter, value: filterValue, label: filterOptions.find(f => f.value === selectedFilter)?.label }
+    ]);
+    setFilterValue('');
+  };
+
+  const handleRemoveFilter = (key) => {
+    setFilters(prev => prev.filter(f => f.key !== key));
+  };
+
+  const handleFilterKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAddFilter();
+    }
+  };
 
   const handleExpand = async (id) => {
     if (expandedId === id) {
       // Collapse if already expanded
       setExpandedId(null);
-      setExpandedData(null);
       return;
     }
-
     setExpandedId(id);
-    setLoadingExpanded(true);
-    setExpandedData(null);
-
-    try {
-      // Fetch detailed data using generic endpoint
-      const data = await fetchWorkSheet(id, navigate, true);
-      const normalizedData = {
-        ...data,
-        id: id,
-        aigp: normalizeAigpData(data.aigp)
-      };
-      setExpandedData(normalizedData);
-    } catch (err) {
-      console.error("Error fetching expanded worksheet data:", err);
-      setError("Failed to load worksheet details. Please try again later.");
-      setExpandedId(null);
-    } finally {
-      setLoadingExpanded(false);
-    }
   };
 
   const handleViewDetails = (id) => {
@@ -2796,6 +2817,104 @@ export function GenericListWorkSheets() {
             </div>
           </div>
 
+          {/* --- Filter Section --- */}
+          <div className="filter-section" style={{ marginBottom: 20 }}>
+            <button
+              className="btn btn-outline-primary"
+              type="button"
+              onClick={() => setFilterCollapsed(c => !c)}
+              style={{ marginBottom: 8 }}
+            >
+              {filterCollapsed ? "Show Filters" : "Hide Filters"}
+            </button>
+            {!filterCollapsed && (
+              <div className="filter-controls" style={{
+                background: "#f8f9fa",
+                border: "1px solid #e0e0e0",
+                borderRadius: 6,
+                padding: 12,
+                marginBottom: 10
+              }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <select
+                    value={selectedFilter}
+                    onChange={e => setSelectedFilter(e.target.value)}
+                    style={{ minWidth: 120 }}
+                  >
+                    {filterOptions.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                  <input
+                    type={filterOptions.find(f => f.value === selectedFilter)?.type || "text"}
+                    value={filterValue}
+                    onChange={e => setFilterValue(e.target.value)}
+                    onKeyDown={handleFilterKeyDown}
+                    placeholder="Enter value"
+                    style={{ minWidth: 160 }}
+                  />
+                  <button
+                    className="btn btn-primary btn-small"
+                    type="button"
+                    onClick={handleAddFilter}
+                    disabled={!filterValue}
+                  >
+                    Add Filter
+                  </button>
+                  <span style={{ marginLeft: 16, fontSize: 13, color: "#888" }}>
+                    Limit:
+                    <input
+                      type="number"
+                      min={1}
+                      max={200}
+                      value={limit}
+                      onChange={e => setLimit(Number(e.target.value))}
+                      style={{ width: 60, marginLeft: 4, marginRight: 8 }}
+                    />
+                    Offset:
+                    <input
+                      type="number"
+                      min={0}
+                      value={offset}
+                      onChange={e => setOffset(Number(e.target.value))}
+                      style={{ width: 60, marginLeft: 4 }}
+                    />
+                  </span>
+                </div>
+                {/* Active filters */}
+                <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {filters.map(f => (
+                    <span key={f.key} style={{
+                      background: "#e3f2fd",
+                      border: "1px solid #90caf9",
+                      borderRadius: 12,
+                      padding: "4px 10px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      fontSize: 13
+                    }}>
+                      <b>{f.label}:</b> {f.value}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFilter(f.key)}
+                        style={{
+                          marginLeft: 6,
+                          background: "none",
+                          border: "none",
+                          color: "#1976d2",
+                          fontWeight: "bold",
+                          cursor: "pointer",
+                          fontSize: 15
+                        }}
+                        aria-label="Remove filter"
+                      >×</button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="generic-worksheet-list">
             {worksheets.length === 0 ? (
               <div className="no-worksheets">
@@ -2824,14 +2943,9 @@ export function GenericListWorkSheets() {
 
                     {expandedId === worksheet.id && (
                       <div className="worksheet-item-content">
-                        {loadingExpanded ? (
-                          <div className="loading-expanded">
-                            <div className="loading-spinner-small"></div>
-                            <span>Loading details...</span>
-                          </div>
-                        ) : expandedData ? (
+                        {worksheet ? (
                           <GenericWorksheetDisplay
-                            worksheetData={expandedData}
+                            worksheetData={worksheet}
                             showActions={true}
                             onViewDetails={handleViewDetails}
                             onClose={() => setExpandedId(null)}
