@@ -5,7 +5,4 @@ public class ForceLogout {
 
     public ForceLogout() {}
 
-    public ForceLogout(String targetUsername) {
-        this.targetUsername = targetUsername;
-    }
 }
