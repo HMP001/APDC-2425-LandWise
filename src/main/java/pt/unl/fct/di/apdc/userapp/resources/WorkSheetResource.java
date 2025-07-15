@@ -15,6 +15,7 @@ import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 import org.glassfish.jersey.media.multipart.FormDataParam;
 
 import com.auth0.jwt.interfaces.DecodedJWT;
+import com.google.appengine.repackaged.com.google.gson.reflect.TypeToken;
 import com.google.cloud.datastore.Datastore;
 import com.google.cloud.datastore.DatastoreOptions;
 import com.google.cloud.datastore.Entity;
@@ -423,31 +424,31 @@ public class WorkSheetResource {
         List<StructuredQuery.Filter> filters = new ArrayList<>();
         
         if (request.id != null && !request.id.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.ge("id", request.id));
+            filters.add(StructuredQuery.PropertyFilter.eq("id", request.id));
         }
         if (request.title != null && !request.title.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.ge("title", request.title));
+            filters.add(StructuredQuery.PropertyFilter.eq("title", request.title));
         }
         if (request.status != null && !request.status.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.ge("status", request.status));
+            filters.add(StructuredQuery.PropertyFilter.eq("status", request.status));
         }
         if (request.serviceProviderId != null && !request.serviceProviderId.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.ge("service_provider_id", request.serviceProviderId));
+            filters.add(StructuredQuery.PropertyFilter.eq("service_provider_id", request.serviceProviderId));
         }
         if (request.issuing_user_id != null && !request.issuing_user_id.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.ge("issuing_user_id", request.issuing_user_id));
+            filters.add(StructuredQuery.PropertyFilter.eq("issuing_user_id", request.issuing_user_id));
         }
-        if (request.startDate != null && !request.startDate.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.ge("starting_date", request.startDate));
+        if (request.starting_date != null && !request.starting_date.isEmpty()) {
+            filters.add(StructuredQuery.PropertyFilter.eq("starting_date", request.starting_date));
         }
-        if (request.finishingDate != null && !request.finishingDate.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.ge("finishing_date", request.finishingDate));
+        if (request.finishing_date != null && !request.finishing_date.isEmpty()) {
+            filters.add(StructuredQuery.PropertyFilter.eq("finishing_date", request.finishing_date));
         }
         if (request.issueDate != null && !request.issueDate.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.ge("issue_date", request.issueDate));
+            filters.add(StructuredQuery.PropertyFilter.eq("issue_date", request.issueDate));
         }
         if (request.awardDate != null && !request.awardDate.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.ge("award_date", request.awardDate));
+            filters.add(StructuredQuery.PropertyFilter.eq("award_date", request.awardDate));
         }
         
         if (!filters.isEmpty()) {
@@ -472,6 +473,13 @@ public class WorkSheetResource {
                 Entity entity = results.next();
                 Map<String, Object> worksheetData = new HashMap<>();
                 worksheetData.put("id", entity.getKey().getName());
+                
+                if (request.aigp != null && !request.aigp.isEmpty() && entity.contains("aigp")) {
+                	List<String> entityAigpList = g.fromJson(entity.getString("aigp"), new TypeToken<List<String>>(){}.getType());
+                    if (!entityAigpList.containsAll(request.aigp)) {
+                        continue;
+                    }
+                }
                 
                 for (String field : generalFields) {
                     if (entity.contains(field)) {
@@ -517,29 +525,31 @@ public class WorkSheetResource {
         List<StructuredQuery.Filter> filters = new ArrayList<>();
         
         if (request.id != null && !request.id.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.ge("id", request.id));
+            filters.add(StructuredQuery.PropertyFilter.eq("id", request.id));
         }
         if (request.title != null && !request.title.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.ge("title", request.title));
+            filters.add(StructuredQuery.PropertyFilter.eq("title", request.title));
         }
         if (request.status != null && !request.status.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.ge("status", request.status));
+            filters.add(StructuredQuery.PropertyFilter.eq("status", request.status));
         }
         if (request.serviceProviderId != null && !request.serviceProviderId.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.ge("service_provider_id", request.serviceProviderId));
+            filters.add(StructuredQuery.PropertyFilter.eq("service_provider_id", request.serviceProviderId));
         }
-        if (request.startDate != null && !request.startDate.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.ge("starting_date", request.startDate));
+        if (request.issuing_user_id != null && !request.issuing_user_id.isEmpty()) {
+            filters.add(StructuredQuery.PropertyFilter.eq("issuing_user_id", request.issuing_user_id));
         }
-        if (request.finishingDate != null && !request.finishingDate.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.ge("finishing_date", request.finishingDate));
+        if (request.starting_date != null && !request.starting_date.isEmpty()) {
+            filters.add(StructuredQuery.PropertyFilter.eq("starting_date", request.starting_date));
+        }
+        if (request.finishing_date != null && !request.finishing_date.isEmpty()) {
+            filters.add(StructuredQuery.PropertyFilter.eq("finishing_date", request.finishing_date));
         }
         if (request.issueDate != null && !request.issueDate.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.ge("issue_date", request.issueDate));
+            filters.add(StructuredQuery.PropertyFilter.eq("issue_date", request.issueDate));
         }
         if (request.awardDate != null && !request.awardDate.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.ge("award_date", request.awardDate));
-        }
+            filters.add(StructuredQuery.PropertyFilter.eq("award_date", request.awardDate));}
         
         if (!filters.isEmpty()) {
             Filter first = filters.get(0);
@@ -560,19 +570,19 @@ public class WorkSheetResource {
 	            Map<String, Object> worksheetData = new HashMap<>();
 	            worksheetData.put("id", entity.getKey().getName());
 	            
+	            if (request.aigp != null && !request.aigp.isEmpty() && entity.contains("aigp")) {
+                	List<String> entityAigpList = g.fromJson(entity.getString("aigp"), new TypeToken<List<String>>(){}.getType());
+                    if (!entityAigpList.containsAll(request.aigp)) {
+                        continue;
+                    }
+                }
+	            
 	            for (String field : entity.getNames()) {
                     if (entity.contains(field)) {
                         worksheetData.put(field, entity.getValue(field).get());
                     }
                 }
 	            
-	            if (entity.contains("operation_ids")) {
-	                worksheetData.put("operations", entity.getList("operation_ids"));
-	            }
-	            if (entity.contains("feature_ids")) {
-	                worksheetData.put("features", entity.getList("feature_ids"));
-	            }
-
 	            worksheets.add(worksheetData);
 	        }
 	        

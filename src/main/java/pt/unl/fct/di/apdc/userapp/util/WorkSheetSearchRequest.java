@@ -8,12 +8,10 @@ public class WorkSheetSearchRequest {
     public List<String> aigp;
     public String serviceProviderId;
     public String issuing_user_id;
-    public String startDate;
-    public String finishingDate;
+    public String starting_date;
+    public String finishing_date;
     public String awardDate;
     public String issueDate;
-    public List<String> operations;
-    public List<String> features;
     public Integer limit;
     public Integer offset;
 
