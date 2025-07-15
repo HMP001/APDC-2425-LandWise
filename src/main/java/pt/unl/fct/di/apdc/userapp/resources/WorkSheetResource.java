@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 import org.glassfish.jersey.media.multipart.FormDataParam;
@@ -30,6 +31,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.protobuf.ListValue;
 
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.CookieParam;
@@ -204,6 +206,7 @@ public class WorkSheetResource {
                 
 
         Map<String, Object> data = new HashMap<>();
+        data.put("id", id);
         for (String name : entity.getNames()) {
             if (isSGVBO && !Set.of("title", "status", "issue_date", "created_at", "starting_date", "finishing_date").contains(name)) continue;
             if (generalFields.contains(name)) {data.put(name, entity.getValue(name).get());}
@@ -240,6 +243,7 @@ public class WorkSheetResource {
             return Response.status(Response.Status.NOT_FOUND).entity("{\"error\":\"Not found\"}").build();
         
         Map<String, Object> detailedData = new HashMap<>();
+        detailedData.put("id", id);
         for (String name : entity.getNames()) {
         	detailedData.put(name, entity.getValue(name).get());
         }
@@ -291,6 +295,7 @@ public class WorkSheetResource {
         while (results.hasNext()) {
             Entity e = results.next();
             Map<String, Object> data = new HashMap<>();
+            data.put("id", e.getKey().getName());
             for (String name : e.getNames()) {
                 data.put(name, e.getValue(name).get());
             }
@@ -416,26 +421,35 @@ public class WorkSheetResource {
         
         EntityQuery.Builder queryBuilder = Query.newEntityQueryBuilder().setKind("WorkSheet");
         List<StructuredQuery.Filter> filters = new ArrayList<>();
-
+        
+        if (request.id != null && !request.id.isEmpty()) {
+            filters.add(StructuredQuery.PropertyFilter.ge("id", request.id));
+        }
         if (request.title != null && !request.title.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.eq("title", request.title));
+            filters.add(StructuredQuery.PropertyFilter.ge("title", request.title));
         }
         if (request.status != null && !request.status.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.eq("status", request.status));
-        }
-        if (request.aigp != null && !request.aigp.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.ge("aigp", request.aigp));
+            filters.add(StructuredQuery.PropertyFilter.ge("status", request.status));
         }
         if (request.serviceProviderId != null && !request.serviceProviderId.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.eq("service_provider_id", request.serviceProviderId));
+            filters.add(StructuredQuery.PropertyFilter.ge("service_provider_id", request.serviceProviderId));
         }
-        if (request.startDateFrom != null && !request.startDateFrom.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.ge("starting_date", request.startDateFrom));
+        if (request.issuing_user_id != null && !request.issuing_user_id.isEmpty()) {
+            filters.add(StructuredQuery.PropertyFilter.ge("issuing_user_id", request.issuing_user_id));
         }
-        if (request.startDateTo != null && !request.startDateTo.isEmpty()) {
-            filters.add(StructuredQuery.PropertyFilter.le("starting_date", request.startDateTo));
+        if (request.startDate != null && !request.startDate.isEmpty()) {
+            filters.add(StructuredQuery.PropertyFilter.ge("starting_date", request.startDate));
         }
-
+        if (request.finishingDate != null && !request.finishingDate.isEmpty()) {
+            filters.add(StructuredQuery.PropertyFilter.ge("finishing_date", request.finishingDate));
+        }
+        if (request.issueDate != null && !request.issueDate.isEmpty()) {
+            filters.add(StructuredQuery.PropertyFilter.ge("issue_date", request.issueDate));
+        }
+        if (request.awardDate != null && !request.awardDate.isEmpty()) {
+            filters.add(StructuredQuery.PropertyFilter.ge("award_date", request.awardDate));
+        }
+        
         if (!filters.isEmpty()) {
             Filter first = filters.get(0);
             Filter[] rest = filters.subList(1, filters.size()).toArray(new Filter[0]);
@@ -457,7 +471,8 @@ public class WorkSheetResource {
             while (results.hasNext()) {
                 Entity entity = results.next();
                 Map<String, Object> worksheetData = new HashMap<>();
-
+                worksheetData.put("id", entity.getKey().getName());
+                
                 for (String field : generalFields) {
                     if (entity.contains(field)) {
                         worksheetData.put(field, entity.getValue(field).get());
@@ -470,12 +485,105 @@ public class WorkSheetResource {
             return Response.ok(g.toJson(worksheets)).build();
 
         } catch (Exception e) {
-            LOG.severe("Error searching worksheets: " + e.getMessage());
+        	LOG.severe("Error searching worksheets: " + e.getMessage());
             return Response.status(Status.INTERNAL_SERVER_ERROR)
                     .entity("{\"message\":\"Error searching worksheets\"}").build();
         }
+        
     }
+    
+    @POST
+    @Path("/searchDetailed")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response searcDetailedhWorksheets(WorkSheetSearchRequest request,
+                                    @CookieParam("session::apdc") Cookie cookie,
+                                    @HeaderParam("Authorization") String authHeader) {
+        
+        String token = extractJWT(cookie, authHeader);
+        if (token == null || !JWTToken.validateJWT(token)) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Invalid or expired session.\"}").build();
+        }
 
+        DecodedJWT jwt = JWTToken.extractJWT(token);
+        String requesterRole = jwt.getClaim("role").asString();
+        
+        if (!Set.of(Roles.SMBO, Roles.SDVBO).contains(requesterRole)) {
+            return Response.status(Status.FORBIDDEN)
+                    .entity("{\"message\":\"Not authorized to search worksheets.\"}").build();
+        }
+        
+        EntityQuery.Builder queryBuilder = Query.newEntityQueryBuilder().setKind("WorkSheet");
+        List<StructuredQuery.Filter> filters = new ArrayList<>();
+        
+        if (request.id != null && !request.id.isEmpty()) {
+            filters.add(StructuredQuery.PropertyFilter.ge("id", request.id));
+        }
+        if (request.title != null && !request.title.isEmpty()) {
+            filters.add(StructuredQuery.PropertyFilter.ge("title", request.title));
+        }
+        if (request.status != null && !request.status.isEmpty()) {
+            filters.add(StructuredQuery.PropertyFilter.ge("status", request.status));
+        }
+        if (request.serviceProviderId != null && !request.serviceProviderId.isEmpty()) {
+            filters.add(StructuredQuery.PropertyFilter.ge("service_provider_id", request.serviceProviderId));
+        }
+        if (request.startDate != null && !request.startDate.isEmpty()) {
+            filters.add(StructuredQuery.PropertyFilter.ge("starting_date", request.startDate));
+        }
+        if (request.finishingDate != null && !request.finishingDate.isEmpty()) {
+            filters.add(StructuredQuery.PropertyFilter.ge("finishing_date", request.finishingDate));
+        }
+        if (request.issueDate != null && !request.issueDate.isEmpty()) {
+            filters.add(StructuredQuery.PropertyFilter.ge("issue_date", request.issueDate));
+        }
+        if (request.awardDate != null && !request.awardDate.isEmpty()) {
+            filters.add(StructuredQuery.PropertyFilter.ge("award_date", request.awardDate));
+        }
+        
+        if (!filters.isEmpty()) {
+            Filter first = filters.get(0);
+            Filter[] rest = filters.subList(1, filters.size()).toArray(new Filter[0]);
+            queryBuilder.setFilter(CompositeFilter.and(first, rest));
+        }
+        
+        queryBuilder
+        .setLimit(request.limit != null ? request.limit : 20)
+        .setOffset(request.offset != null ? request.offset : 0);
+
+	    try {
+	        QueryResults<Entity> results = datastore.run(queryBuilder.build());
+	        List<Map<String, Object>> worksheets = new ArrayList<>();
+	        
+	        while (results.hasNext()) {
+	            Entity entity = results.next();
+	            Map<String, Object> worksheetData = new HashMap<>();
+	            worksheetData.put("id", entity.getKey().getName());
+	            
+	            for (String field : entity.getNames()) {
+                    if (entity.contains(field)) {
+                        worksheetData.put(field, entity.getValue(field).get());
+                    }
+                }
+	            
+	            if (entity.contains("operation_ids")) {
+	                worksheetData.put("operations", entity.getList("operation_ids"));
+	            }
+	            if (entity.contains("feature_ids")) {
+	                worksheetData.put("features", entity.getList("feature_ids"));
+	            }
+
+	            worksheets.add(worksheetData);
+	        }
+	        
+	        return Response.ok(g.toJson(worksheets)).build();
+	    } catch (Exception e) {
+	    	LOG.severe("Error searching worksheets: " + e.getMessage());
+            return Response.status(Status.INTERNAL_SERVER_ERROR)
+                    .entity("{\"message\":\"Error searching worksheets\"}").build();
+	    }
+
+    }
 
     @DELETE
     @Path("/delete/{id}")
