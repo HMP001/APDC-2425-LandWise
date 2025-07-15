@@ -50,7 +50,6 @@ public class LoginResource {
                 return Response.status(Status.FORBIDDEN).entity("Incorrect username or password.").build();
             }
 
-            // Verifica estado da conta
             String accountState = user.getString("user_account_state");
             LOG.info("Estado da conta de " + data.username + ": " + accountState);
             if (!"ATIVADO".equalsIgnoreCase(accountState)) {
