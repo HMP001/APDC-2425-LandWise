@@ -264,7 +264,7 @@ const WorksheetDisplay = React.memo(function WorksheetDisplay({
           />
         );
 
-        // Add rural property ID label if available and feature is selected
+        // Add rural property ID label and directions button if available and feature is selected
         if (ruralPropertyId && isSelected) {
           const centroid = calculatePolygonCentroid(coordinates[0]);
           const labelElement = (
@@ -288,6 +288,18 @@ const WorksheetDisplay = React.memo(function WorksheetDisplay({
                 textAlign: 'center'
               }}>
                 {ruralPropertyId}
+                <br />
+                <button
+                  type="button"
+                  className="btn btn-info"
+                  style={{ fontSize: '11px', marginTop: '4px', padding: '2px 8px' }}
+                  onClick={() => {
+                    const url = `https://www.google.com/maps/dir/?api=1&destination=${centroid.lat},${centroid.lng}`;
+                    window.open(url, '_blank');
+                  }}
+                >
+                  Get Directions
+                </button>
               </div>
             </InfoWindow>
           );
@@ -1532,12 +1544,18 @@ export function ListWorkSheets() {
   const [loading, setLoading] = useState(true);
 
   const filterOptions = [
-    { label: "Title", value: "title", type: "text" },
-    { label: "Status", value: "status", type: "text" },
     { label: "AIGP", value: "aigp", type: "text" },
+    { label: "Status", value: "status", type: "text" },
+    { label: "Offset", value: "offset", type: "number" },
+    { label: "Issuing User ID", value: "issuing_user_id", type: "text" },
+    { label: "Issue Date", value: "issueDate", type: "date" },
+    { label: "Title", value: "title", type: "text" },
+    { label: "ID", value: "id", type: "text" },
+    { label: "Starting Date", value: "starting_date", type: "date" },
+    { label: "Finishing Date", value: "finishing_date", type: "date" },
     { label: "Service Provider ID", value: "serviceProviderId", type: "text" },
-    { label: "Start Date From", value: "startDateFrom", type: "date" },
-    { label: "Start Date To", value: "startDateTo", type: "date" }
+    { label: "Award Date", value: "awardDate", type: "date" },
+    { label: "Limit", value: "limit", type: "number" }
   ];
   const [filters, setFilters] = useState([]);
   const [filterCollapsed, setFilterCollapsed] = useState(true);
@@ -2828,12 +2846,18 @@ export function GenericListWorkSheets() {
 
   // --- Filter state ---
   const filterOptions = [
-    { label: "Title", value: "title", type: "text" },
-    { label: "Status", value: "status", type: "text" },
     { label: "AIGP", value: "aigp", type: "text" },
+    { label: "Status", value: "status", type: "text" },
+    { label: "Offset", value: "offset", type: "number" },
+    { label: "Issuing User ID", value: "issuing_user_id", type: "text" },
+    { label: "Issue Date", value: "issueDate", type: "date" },
+    { label: "Title", value: "title", type: "text" },
+    { label: "ID", value: "id", type: "text" },
+    { label: "Starting Date", value: "starting_date", type: "date" },
+    { label: "Finishing Date", value: "finishing_date", type: "date" },
     { label: "Service Provider ID", value: "serviceProviderId", type: "text" },
-    { label: "Start Date From", value: "startDateFrom", type: "date" },
-    { label: "Start Date To", value: "startDateTo", type: "date" }
+    { label: "Award Date", value: "awardDate", type: "date" },
+    { label: "Limit", value: "limit", type: "number" }
   ];
   const [filters, setFilters] = useState([]);
   const [filterCollapsed, setFilterCollapsed] = useState(true);
