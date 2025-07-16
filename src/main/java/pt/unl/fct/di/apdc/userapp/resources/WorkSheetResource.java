@@ -92,13 +92,16 @@ public class WorkSheetResource {
     
         String requesterUsername = jwt.getSubject();
         String requesterRole = jwt.getClaim("role").asString();
+        Key key = datastore.newKeyFactory().setKind("WorkSheet").newKey(data.id);
+        
         if (!Roles.SMBO.equalsIgnoreCase(requesterRole))
             return forbidden("Only SMBO can create worksheets.");
         if (!data.valid())
             return Response.status(Response.Status.BAD_REQUEST).entity("{\"message\":\"Missing required fields.\"}").build();
-
+        if (datastore.get(key) != null)
+            return Response.status(Status.CONFLICT).entity("Worksheet já existe.").build();
+        
         try {
-            Key key = datastore.newKeyFactory().setKind("WorkSheet").newKey(data.id);
             Entity worksheet = Entity.newBuilder(key)
                 .set("title", data.title)
                 .set("issue_date", data.issue_date)

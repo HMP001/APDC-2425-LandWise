@@ -40,6 +40,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.Cookie;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
 import pt.unl.fct.di.apdc.userapp.util.ExecutionSheetData;
 import pt.unl.fct.di.apdc.userapp.util.JWTToken;
 import pt.unl.fct.di.apdc.userapp.util.Roles;
@@ -94,10 +95,13 @@ public class ExecutionSheetResource {
 
         Key wsKey = datastore.newKeyFactory().setKind("WorkSheet").newKey(data.worksheet_id);
         Entity worksheet = datastore.get(wsKey);
+        Key execKey = datastore.newKeyFactory().setKind("ExecutionSheet").newKey(data.worksheet_id);
         if (worksheet == null)
             return Response.status(Response.Status.NOT_FOUND)
                 .entity("{\"error\":\"Worksheet not found\"}").build();
-
+        if (datastore.get(execKey) != null)
+            return Response.status(Status.CONFLICT).entity("Worksheet já existe.").build();
+        
         Entity userEntity = datastore.get(datastore.newKeyFactory().setKind("User").newKey(userId));
         if (userEntity == null || !userEntity.contains("user_employer"))
             return Response.status(Response.Status.BAD_REQUEST)
@@ -151,10 +155,7 @@ public class ExecutionSheetResource {
         }
 
         String polyOpsJson = g.toJson(polyOpsList);
-
-        // ID da ExecutionSheet igual ao ID da WorkSheet
-        String executionId = data.worksheet_id;
-        Key execKey = datastore.newKeyFactory().setKind("ExecutionSheet").newKey(executionId);
+        
 
         Entity.Builder builder = Entity.newBuilder(execKey)
             .set("worksheet_id", data.worksheet_id)
