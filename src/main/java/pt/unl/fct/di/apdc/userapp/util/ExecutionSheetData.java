@@ -40,6 +40,8 @@ public class ExecutionSheetData {
         public List<String> photo_urls; // usado apenas como input para criar nova activity
         public String activity_id;
         public List<Activity> activities;
+        public String expected_duration_hours;
+        public String expected_finish_date;
     }
 
     public static class Activity {
