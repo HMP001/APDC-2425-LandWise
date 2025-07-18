@@ -794,6 +794,92 @@ public class ExecutionSheetResource {
         export.add("polygons_operations", polygonOpsArray);
         return Response.ok(g.toJson(export)).build();
     }
+    
+    @GET
+	@Path("/viewActiveOperation/{worksheetId}/{polygonId}/{operationCode}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response viewActiveOperation(
+	    @PathParam("worksheetId") String worksheetId,
+	    @PathParam("polygonId") String polygonId,
+	    @PathParam("operationCode") String operationCode,
+	    @CookieParam("session::apdc") Cookie cookie,
+	    @HeaderParam("Authorization") String authHeader) {
+
+	    String token = extractJWT(cookie, authHeader);
+	    if (token == null || !JWTToken.validateJWT(token)) {
+	        return unauthorized("Invalid session");
+	    }
+
+	    DecodedJWT jwt = JWTToken.extractJWT(token);
+	    if (jwt == null) {
+	        return unauthorized("Failed to decode token");
+	    }
+
+	    String role = jwt.getClaim("role").asString();
+	    if (!Set.of(Roles.PRBO, Roles.PO).contains(role)) {
+	        return forbidden("Access denied");
+	    }
+
+	    Key execKey = datastore.newKeyFactory().setKind("ExecutionSheet").newKey(worksheetId);
+	    Entity execSheet = datastore.get(execKey);
+	    if (execSheet == null) {
+	        return Response.status(Response.Status.NOT_FOUND)
+	            .entity("{\"error\":\"Execution sheet not found\"}").build();
+	    }
+
+	    Type listType = new TypeToken<List<ExecutionSheetData.PolygonOperations>>() {}.getType();
+	    List<ExecutionSheetData.PolygonOperations> sheetData = 
+	        g.fromJson(execSheet.getString("polygons_operations"), listType);
+	    
+	    ExecutionSheetData.PolygonOperation result = null;
+	    for (ExecutionSheetData.PolygonOperations polyOps : sheetData) {
+	    	for (ExecutionSheetData.PolygonOperation op : polyOps.operations) {
+	        if (op.operation_code.equalsIgnoreCase(operationCode)) {
+	        		result = op;
+	                break;
+	            }
+	        }
+	        if (result != null) break;
+	    }
+
+	    if (result == null) {
+	        return Response.status(Response.Status.NOT_FOUND)
+	            .entity("{\"error\":\"Operation not found in specified polygon\"}").build();
+	    }
+
+	    if (Roles.PO.equalsIgnoreCase(role)) {
+	        String currentUser = jwt.getSubject();
+	        if (!currentUser.equals(result.operator_username)) {
+	            return forbidden("You can only view operations assigned to you");
+	        }
+	    }
+
+	    JsonObject response = new JsonObject();
+	    response.addProperty("worksheet_id", worksheetId);
+	    response.addProperty("polygon_id", polygonId);
+	    response.addProperty("operation_code", result.operation_code);
+	    response.addProperty("operation_id", result.operation_id);
+	    response.addProperty("status", result.status);
+	    response.addProperty("operator_username", result.operator_username);
+	    response.addProperty("starting_date", result.starting_date);
+	    response.addProperty("finishing_date", result.finishing_date == null ? "not finished" : result.finishing_date);
+	    response.addProperty("last_activity_date", result.last_activity_date);
+	    
+	    if (result.activities != null && !result.activities.isEmpty()) {
+	        JsonArray activitiesJson = new JsonArray();
+	        for (ExecutionSheetData.Activity activity : result.activities) {
+	            JsonObject activityJson = new JsonObject();
+	            activityJson.addProperty("activity_id", activity.activity_id);
+	            activityJson.addProperty("start_time", activity.start_time);
+	            activityJson.addProperty("end_time", activity.end_time);
+	            activityJson.addProperty("observations", activity.observations);
+	            activitiesJson.add(activityJson);
+	        }
+	        response.add("activities", activitiesJson);
+	    }
+
+	    return Response.ok(g.toJson(response)).build();
+	}
 
     @POST
     @Path("/editOperation")
