@@ -131,7 +131,6 @@
         <version>${appengine.maven.plugin.version}</version>
         <configuration>
           <deploy.projectId>alien-iterator-460014-a0</deploy.projectId>
-          <deploy.version>GCLOUD_CONFIG</deploy.version>
         </configuration>
       </plugin>
       <plugin>
