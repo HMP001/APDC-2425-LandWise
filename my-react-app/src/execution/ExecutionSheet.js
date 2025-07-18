@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import './ExecutionSheet.css';
-import CheckRequests from './CheckRequests';
-import { topBar } from './TopBar';
+import CheckRequests from '../CheckRequests';
+import { topBar } from '../TopBar';
+import { editOperationRequest, assignOperationRequest } from './api';
 
 /**
  * ExecutionSheet Component - UI for viewing and managing execution sheets
@@ -15,6 +16,7 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
   const [activeTab, setActiveTab] = useState('overview');
   const [searchPolygonKey, setSearchPolygonKey] = useState('');
   const [assignmentState, setAssignmentState] = useState({}); // { [polygonId_operationId]: { username, loading, error, assignedTo } }
+  const [pendingAssignments, setPendingAssignments] = useState([]); // [{ polygon_id, operations: [{ operation_code, operator_username }] }]
 
   // Add state for operation edits and errors in the summary table
   const [operationEdits, setOperationEdits] = useState({});
@@ -179,58 +181,34 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
   };
 
   // Handle save operation
-  const handleSave = async () => {
-    let hasError = false;
+  // Save handler for local edits, and call onSave if provided
+  const handleSave = () => {
     const errors = {};
-    // Only for summary table (executionSheet.operations) - removed area and percentage fields
+    let updatedSheet = executionSheet;
+    // Only for summary table (executionSheet.operations)
     for (const idx in operationEdits) {
       const edited = operationEdits[idx];
       const original = executionSheet.operations[idx];
-      // Check if any field changed - removed 'area_ha_executed', 'area_perc'
-      const fields = ['observations', 'starting_date', 'finishing_date'];
-      let changed = false;
-      for (const field of fields) {
-        if (edited[field] !== original[field]) {
-          changed = true;
-          break;
-        }
-      }
-      if (changed) {
-        try {
-          const res = await fetch('/rest/execution/editOperation', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              worksheet_id: executionSheet.id,
-              operation_code: edited.operation_code,
-              observations: edited.observations,
-              starting_date: edited.starting_date,
-              finishing_date: edited.finishing_date
-            })
-          });
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            errors[idx] = err.error || 'Failed to edit operation';
-            hasError = true;
-          } else {
-            // Update the main state if successful
-            setExecutionSheet(prev => {
-              const updated = { ...prev };
-              updated.operations[idx] = { ...edited };
-              return updated;
-            });
-          }
-        } catch (e) {
-          errors[idx] = e.message || 'Failed to edit operation';
-          hasError = true;
-        }
+      // Check if any field changed
+      if (
+        edited.starting_date !== original.starting_date ||
+        edited.finishing_date !== original.finishing_date ||
+        edited.observations !== original.observations
+      ) {
+        updatedSheet = { ...updatedSheet };
+        updatedSheet.operations = [...updatedSheet.operations];
+        updatedSheet.operations[idx] = { ...edited };
       }
     }
     setOperationEditErrors(errors);
-    if (!hasError && onSave) {
-      onSave(executionSheet);
-    }
     setEditMode(false);
+    if (onSave) {
+      onSave(updatedSheet, pendingAssignments);
+      setPendingAssignments([]);
+    } else {
+      setExecutionSheet(updatedSheet);
+      setPendingAssignments([]);
+    }
   };
 
   // Assignment handler (dummy mode support)
@@ -266,42 +244,30 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
       return;
     }
 
-    try {
-      // Build the payload as expected by backend
-      const payload = {
-        worksheet_id: executionSheet.id,
-        polygons_operations: [
-          {
-            polygon_id: polygonId,
-            operations: [
-              {
-                operation_code: operationCode,
-                operator_username: username
-              }
-            ]
-          }
-        ]
-      };
-      const res = await fetch('/rest/execution/assign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || 'Failed to assign operator');
-      }
-      setAssignmentState(prev => ({
-        ...prev,
-        [key]: { ...prev[key], loading: false, error: null, assignedTo: username }
-      }));
-      // Optionally update executionSheet state to reflect assignment
-    } catch (e) {
-      setAssignmentState(prev => ({
-        ...prev,
-        [key]: { ...prev[key], loading: false, error: e.message, assignedTo: undefined }
-      }));
-    }
+    // Instead of sending immediately, batch assignment changes
+    setPendingAssignments(prev => {
+      // Remove any previous assignment for this polygon/operation
+      const filtered = prev.filter(
+        pa => !(pa.polygon_id === polygonId && pa.operations.some(op => op.operation_code === operationCode))
+      );
+      // Add new assignment
+      return [
+        ...filtered,
+        {
+          polygon_id: polygonId,
+          operations: [
+            {
+              operation_code: operationCode,
+              operator_username: username
+            }
+          ]
+        }
+      ];
+    });
+    setAssignmentState(prev => ({
+      ...prev,
+      [key]: { ...prev[key], loading: false, error: null, assignedTo: username }
+    }));
   };
 
   // Start activity handler (dummy mode support)
@@ -701,17 +667,20 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
                               >
                                 {assignState.loading ? 'Assigning...' : 'Assign'}
                               </button>
-                              <button
-                                className="btn btn-sm btn-success"
-                                onClick={() => handleStartActivity(
-                                  polygonOps.polygon_id,
-                                  operation.operation_code,
-                                  assignState.username || operation.assigned_to
-                                )}
-                                disabled={!editMode || !(assignState.username || operation.assigned_to)}
-                              >
-                                Start Activity
-                              </button>
+                              {/* Only show Start Activity in dummy mode */}
+                              {(!executionSheetData) && (
+                                <button
+                                  className="btn btn-sm btn-success"
+                                  onClick={() => handleStartActivity(
+                                    polygonOps.polygon_id,
+                                    operation.operation_code,
+                                    assignState.username || operation.assigned_to
+                                  )}
+                                  disabled={!editMode || !(assignState.username || operation.assigned_to)}
+                                >
+                                  Start Activity
+                                </button>
+                              )}
                               {assignState.assignedTo && (
                                 <span className="assignment-feedback" style={{ color: '#28a745' }}>
                                   Assigned to: {assignState.assignedTo}
@@ -961,12 +930,48 @@ export function ViewExecutionSheet() {
     );
   }
 
+  const onSave = async (updatedSheet, pendingAssignments = []) => {
+    if (!updatedSheet || !updatedSheet.id) {
+      setError('Invalid execution sheet data');
+      return;
+    }
+
+    // Save operation edits
+    if (updatedSheet.operations !== executionSheetData.operations) {
+      try {
+        await editOperationRequest(updatedSheet.id, updatedSheet.operations);
+        setExecutionSheetData(prev => ({ ...prev, operations: updatedSheet.operations }));
+        setError(null);
+      } catch (e) {
+        setError('Failed to save execution sheet operations');
+      }
+    }
+
+    // Save batch assignments if any
+    if (pendingAssignments && pendingAssignments.length > 0) {
+      try {
+        const payload = {
+          worksheet_id: updatedSheet.id,
+          polygons_operations: pendingAssignments
+        };
+        const res = await assignOperationRequest(payload);
+        if (!res.ok) {
+          setError('Failed to assign operators');
+        } else {
+          setError(null);
+        }
+      } catch (e) {
+        setError('Failed to assign operators');
+      }
+    }
+  };
+
   return (
     <>
       {topBar && typeof topBar === 'function' ? topBar(navigate) : topBar}
       <ExecutionSheet
         executionSheetData={executionSheetData}
-        onSave={null}
+        onSave={onSave}
         onClose={() => navigate(-1)}
         isEditable={true}
       />

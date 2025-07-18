@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import CheckRequests from './CheckRequests';
 import { useState } from 'react';
-import { CreateExecutionSheet } from './ExecutionSheet';
+import { CreateExecutionSheet } from './execution/ExecutionSheet';
 
 async function Logout(token, navigate) {
   try {
@@ -234,8 +234,8 @@ export default function Home() {
     { label: 'Assign Operation to Operator', onClick: () => setExecSheetModal('assign'), show: role === 'PRBO' },
     { label: 'Start Activity', onClick: () => setExecSheetModal('start'), show: role === 'PO' },
     { label: 'Stop Activity', onClick: () => setExecSheetModal('stop'), show: role === 'PO' },
-    { label: 'View Activity State', onClick: () => setExecSheetModal('viewact'), show: role === 'PO' || role === 'PRBO' },
-    { label: 'Add Info to Activity', onClick: () => setExecSheetModal('addinfo'), show: role === 'OP' },
+    { label: 'View Activity State', onClick: () => setExecSheetModal('viewact'), show: ['PO', 'PRBO', 'SDVBO', 'SYSBO', 'SYSADMIN'].includes(role) },
+    { label: 'Add Info to Activity', onClick: () => setExecSheetModal('addinfo'), show: ['PO', 'PRBO', 'SDVBO', 'SYSBO', 'SYSADMIN'].includes(role) },
     { label: 'View Operation Status', onClick: () => setExecSheetModal('viewstatus'), show: role === 'PRBO' || role === 'SDVBO' },
     { label: 'Edit Operation', onClick: () => setExecSheetModal('editop'), show: role === 'PRBO' || role === 'SDVBO' },
   ];
@@ -257,7 +257,7 @@ export default function Home() {
           {userButtons.filter(btn => btn.show === undefined || btn.show).map(btn => (
             <button key={btn.label} className="btn btn-primary" onClick={btn.onClick}>{btn.label}</button>
           ))}
-          {(role === 'SYSADMIN' || role === 'SYSBO' || role === 'SMBO' || role === 'PRBO') && (
+          {(role === 'SYSADMIN' || role === 'SYSBO' || role === 'SMBO' || role === 'PRBO' || role === 'PO') && (
             <>
               <h3>Worksheets</h3>
               {worksheetButtons.filter(btn => btn.show).map(btn => (
@@ -410,11 +410,12 @@ function SelectExecutionSheet({ onClose, mode, loading, setLoading, error, setEr
           setLoading(false);
           return;
         }
+        // AssignOperationRequest POJO expects execution_id and polygon_operations
         const payload = {
-          worksheet_id: id.trim(),
-          polygons_operations: [
+          execution_id: id.trim(),
+          polygon_operations: [
             {
-              polygon_id: polygonId,
+              polygon_id: parseInt(polygonId, 10),
               operations: [
                 {
                   operation_code: operationCode,
@@ -462,7 +463,7 @@ function SelectExecutionSheet({ onClose, mode, loading, setLoading, error, setEr
     } else if (mode === 'stop') {
       navigate(`/executionsheet/${id}/stop`);
     } else if (mode === 'viewact') {
-      navigate(`/executionsheet/${id}/activity`);
+      navigate(`/executionsheet/${id}/activities`);
     } else if (mode === 'addinfo') {
       navigate(`/executionsheet/${id}/addinfo`);
     } else if (mode === 'viewstatus') {

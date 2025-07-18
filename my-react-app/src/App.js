@@ -11,8 +11,13 @@ import Login from './Login';
 import Register from './Register';
 import List from './List';
 import { Attributes, ChangePassword, ChangeRole } from './Attributes';
-import WorkSheet, { ViewWorkSheet, ListWorkSheets, UploadWorkSheet, GenericListWorkSheets, GenericViewWorkSheet } from './WorkSheet';
-import { ViewExecutionSheet } from './ExecutionSheet';
+import { ViewWorkSheet, GenericViewWorkSheet } from './worksheet/ViewWorksheet';
+import { ListWorkSheets, GenericListWorkSheets } from './worksheet/ListWorksheet';
+import WorkSheet ,{ UploadWorkSheet } from './worksheet/WorkSheet';
+import { ViewExecutionSheet } from './execution/ExecutionSheet';
+import ExecutionSheetActivities from './execution/ExecutionSheetActivities';
+import ExecutionSheetEditOp from './execution/ExecutionSheetEditOp';
+import ExecutionSheetStatus from './execution/ExecutionSheetStatus';
 import Media from './Media';
 import Event from './Event';
 
@@ -48,6 +53,9 @@ function App() {
           <Route path="/worksheet/generic-view/:id" element={<GenericViewWorkSheet />} />
           <Route path="/worksheet/upload" element={<UploadWorkSheet />} />
           <Route path="/executionsheet/:id" element={<ViewExecutionSheet />} />
+          <Route path="/executionsheet/:id/activities" element={<ExecutionSheetActivities />} />
+          <Route path="/executionsheet/:id/editop" element={<ExecutionSheetEditOp />} />
+          <Route path="/executionsheet/:id/status" element={<ExecutionSheetStatus />} />
           <Route path="/media" element={<Media />} />
           <Route path="/event" element={<Event />} />
           <Route path="*" element={<NotFound />} />
