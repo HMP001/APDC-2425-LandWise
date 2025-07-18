@@ -403,16 +403,33 @@ function SelectExecutionSheet({ onClose, mode, loading, setLoading, error, setEr
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch('/rest/executionsheet/assign', {
+        // Parse assignKey as 'polygonId_operationCode'
+        const [polygonId, operationCode] = assignKey.trim().split('_');
+        if (!polygonId || !operationCode) {
+          setError("Polygon-Operation Key must be in the format 'polygonId_operationCode'.");
+          setLoading(false);
+          return;
+        }
+        const payload = {
+          worksheet_id: id.trim(),
+          polygons_operations: [
+            {
+              polygon_id: polygonId,
+              operations: [
+                {
+                  operation_code: operationCode,
+                  operator_username: assignUsername.trim()
+                }
+              ]
+            }
+          ]
+        };
+        const response = await fetch('/rest/execution/assign', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({
-            execSheetId: id.trim(),
-            username: assignUsername.trim(),
-            polygonOperationKey: assignKey.trim()
-          })
+          body: JSON.stringify(payload)
         });
         if (response.ok) {
           setError(null);

@@ -267,15 +267,25 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
     }
 
     try {
+      // Build the payload as expected by backend
+      const payload = {
+        worksheet_id: executionSheet.id,
+        polygons_operations: [
+          {
+            polygon_id: polygonId,
+            operations: [
+              {
+                operation_code: operationCode,
+                operator_username: username
+              }
+            ]
+          }
+        ]
+      };
       const res = await fetch('/rest/execution/assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          worksheet_id: executionSheet.id,
-          polygon_id: polygonId,
-          operation_code: operationCode,
-          assigned_to: username
-        })
+        body: JSON.stringify(payload)
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
