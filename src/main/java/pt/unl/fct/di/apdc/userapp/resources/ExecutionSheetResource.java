@@ -523,7 +523,23 @@ public class ExecutionSheetResource {
     @GET
     @Path("/getExecution/{executionId}")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response getExecution(@PathParam("executionId") String executionId) {
+    public Response getExecution(
+        @CookieParam("session::apdc") Cookie cookie,
+        @HeaderParam("Authorization") String authHeader,
+        @PathParam("executionId") String executionId
+        ) {
+
+        String token = extractJWT(cookie, authHeader);
+
+        if (token == null || !JWTToken.validateJWT(token))
+            return unauthorized("Invalid session");
+        DecodedJWT jwt = JWTToken.extractJWT(token);
+        if (jwt == null)
+            return unauthorized("Failed to decode token");
+
+        String role = jwt.getClaim("role").asString();
+        if (!Set.of(Roles.PRBO, Roles.SDVBO, Roles.SMBO).contains(role))
+            return forbidden("Access denied");
         if (executionId == null || executionId.isEmpty()) {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("{\"error\":\"Missing executionId\"}").build();
