@@ -198,7 +198,7 @@ const RegisterForm = ({
           autoComplete="company_nif"
         />
 
-        <label className="form-label" htmlFor="photo_url">Photo URL:</label>
+        <label className="form-label" htmlFor="photo_url">Photo URL (optional):</label>
         <input
           className="form-input"
           id="photo_url"
@@ -206,8 +206,16 @@ const RegisterForm = ({
           name="photo_url"
           value={userData.photo_url}
           onChange={changeData}
-          required={getFieldRequirement('photo_url') === 'required'}
           autoComplete="photo_url"
+        />
+        <label className="form-label" htmlFor="profile_picture">Profile Picture (optional):</label>
+        <input
+          className="form-input"
+          id="profile_picture"
+          type="file"
+          name="profile_picture"
+          accept="image/*"
+          onChange={changeData}
         />
 
         <label className="form-label" htmlFor="cc">CC:</label>
@@ -295,18 +303,18 @@ const RegisterForm = ({
 
       </div>
       {!showWarning && (
-        <button 
-          className="btn btn-primary btn-large" 
+        <button
+          className="btn btn-primary btn-large"
           type="submit"
           disabled={loading}
         >
           {loading ? (
             <>
               Registering...
-              <span className="spinner"/>
+              <span className="spinner" />
             </>
           ) : (
-          'Register'
+            'Register'
           )}
         </button>
       )}
@@ -334,6 +342,7 @@ function Register() {
     postal_code: '',
     company_nif: '',
     photo_url: '',
+    profile_picture: null,
     cc: '',
     cc_issue_date: '',
     cc_issue_place: '',
@@ -381,7 +390,11 @@ function Register() {
   };
 
   const handleChange = (e) => {
-    setUserData({ ...userData, [e.target.name]: e.target.value });
+    if (e.target.type === 'file') {
+      setUserData({ ...userData, [e.target.name]: e.target.files[0] });
+    } else {
+      setUserData({ ...userData, [e.target.name]: e.target.value });
+    }
     setError('');
     setWarning('');
   };
@@ -418,66 +431,73 @@ function Register() {
 
     if (userData.password !== userData.confirmation) {
       setError('Passwords do not match');
+      setLoading(false);
       return;
     }
 
     const { missingRequired, missingForActivation } = validateForm();
 
-    // Block submission if required fields are missing
     if (missingRequired.length > 0) {
       setError(`Please fill in the following required fields: ${missingRequired.join(', ')}`);
+      setLoading(false);
       return;
     }
 
-    // Show warning for activation fields if not already confirmed
     if (missingForActivation.length > 0 && !showWarningConfirm) {
       setWarning(`The following fields are required for account activation: ${missingForActivation.join(', ')}. Your account will be created as INACTIVE until these are filled. Do you want to proceed?`);
       setShowWarningConfirm(true);
+      setLoading(false);
       return;
     }
 
-    // Reset warning state
     setShowWarningConfirm(false);
 
     try {
+      const formData = new FormData();
+      // Prepare JSON data for 'data' field
+      const accountData = {
+        username: userData.username,
+        password: userData.password,
+        confirmation: userData.confirmation,
+        email: userData.email,
+        name: userData.name,
+        telephone: userData.telephone1,
+        telephone2: userData.telephone2,
+        profile: userData.profile,
+        role: userData.role,
+        nif: userData.nif,
+        employer: userData.employer,
+        job: userData.job,
+        address: userData.address,
+        postal_code: userData.postal_code,
+        company_nif: userData.company_nif,
+        photo_url: userData.photo_url,
+        cc: userData.cc,
+        cc_issue_date: userData.cc_issue_date,
+        cc_issue_place: userData.cc_issue_place,
+        cc_validity: userData.cc_validity,
+        birth_date: userData.birth_date,
+        nationality: userData.nationality,
+        residence_country: userData.residence_country
+      };
+      formData.append('data', JSON.stringify(accountData));
+      // Only append profile_picture if a file is selected
+      if (userData.profile_picture) {
+        formData.append('profile_picture', userData.profile_picture);
+      }
       const response = await fetch('/rest/register/newaccount', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          username: userData.username,
-          password: userData.password,
-          confirmation: userData.confirmation,
-          email: userData.email,
-          name: userData.name,
-          telephone: userData.telephone1,
-          telephone2: userData.telephone2,
-          profile: userData.profile,
-          role: userData.role,
-          nif: userData.nif,
-          employer: userData.employer,
-          job: userData.job,
-          address: userData.address,
-          postal_code: userData.postal_code,
-          company_nif: userData.company_nif,
-          photo_url: userData.photo_url,
-          cc: userData.cc,
-          cc_issue_date: userData.cc_issue_date,
-          cc_issue_place: userData.cc_issue_place,
-          cc_validity: userData.cc_validity,
-          birth_date: userData.birth_date,
-          nationality: userData.nationality,
-          residence_country: userData.residence_country
-        }),
+        body: formData
       });
-
       if (response.ok) {
-        // Registration successful, redirect to login page
         navigate('/login');
       } else {
-        const errorData = await response.json();
-        setError(errorData.message || 'Registration failed');
+        let errorMsg = 'Registration failed';
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData.message || errorMsg;
+        } catch { }
+        setError(errorMsg);
         setLoading(false);
       }
     } catch (error) {

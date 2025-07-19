@@ -100,36 +100,6 @@ const attributesForms = ({
           <option value="PRIVADO">Private</option>
         </select>
 
-        <label className="form-label" htmlFor="role">Role:</label>
-        <select
-          className="form-input"
-          id="role"
-          name="role"
-          value={attributes.role}
-          onChange={changeData}
-        >
-          {Object.entries(roles)
-            .filter(([key]) => key !== 'root' && key !== 'visitor')
-            .map(([key, role]) => (
-              <option key={key} value={role.value}>
-                {role.name}
-              </option>
-            ))}
-        </select>
-
-        <label className="form-label" htmlFor="account_state">Account State:</label>
-        <select
-          className="form-input"
-          id="account_state"
-          name="account_state"
-          value={attributes.account_state}
-          onChange={changeData}
-        >
-          <option value="ATIVADO">Activated</option>
-          <option value="INATIVO">Deactivated</option>
-        </select>
-
-
         <label className="form-label" htmlFor="nif">NIF:</label>
         <input
           className="form-input"
@@ -196,7 +166,7 @@ const attributesForms = ({
           autoComplete="company_nif"
         />
 
-        <label className="form-label" htmlFor="photo_url">Photo URL:</label>
+        <label className="form-label" htmlFor="photo_url">Photo URL (optional):</label>
         <input
           className="form-input"
           id="photo_url"
@@ -205,6 +175,15 @@ const attributesForms = ({
           value={attributes.photo_url}
           onChange={changeData}
           autoComplete="photo_url"
+        />
+        <label className="form-label" htmlFor="profile_picture">Profile Picture (optional):</label>
+        <input
+          className="form-input"
+          id="profile_picture"
+          type="file"
+          name="profile_picture"
+          accept="image/*"
+          onChange={changeData}
         />
 
         <label className="form-label" htmlFor="cc">CC:</label>
@@ -368,6 +347,7 @@ export function Attributes() {
   const { user } = useParams(); // Use 'id' instead of 'entry'
 
   // If username is provided, use it as the username to fetch/edit, else use session user
+  const [profilePicture, setProfilePicture] = useState(null); // Add profile_picture field for file input
   const sessionUser = JSON.parse(sessionStorage.getItem('userInfo') || {});
   const username = user || sessionUser.username;
 
@@ -404,7 +384,11 @@ export function Attributes() {
   }
 
   const changeData = (event) => {
-    setAttributes({ ...attributes, [event.target.name]: event.target.value });
+    if (event.target.type === 'file') {
+      setAttributes({ ...attributes, profile_picture: event.target.files[0] });
+    } else {
+      setAttributes({ ...attributes, [event.target.name]: event.target.value });
+    }
     setSuccess(false);
     setError("");
   };
@@ -419,26 +403,28 @@ export function Attributes() {
     const stringAttributes = Object.fromEntries(
       Object.entries(attributes).map(([key, value]) => {
         if (key === "username") return [key, String(value)];
+        // Don't include profile_picture in JSON
+        if (key === "profile_picture") return null;
         return [key.startsWith("user_") ? key.slice(5) : key, String(value)];
-      })
+      }).filter(Boolean)
     );
 
     try {
+      const formData = new FormData();
+      formData.append('targetUsername', username);
+      formData.append('attributes', JSON.stringify(stringAttributes));
+      if (attributes.profile_picture) {
+        formData.append('profile_picture', attributes.profile_picture);
+      }
       const response = await fetch('/rest/utils/changeattributes', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          targetUsername: username,
-          attributes: stringAttributes
-        })
+        body: formData
       });
-
       if (response.ok) {
         setInitialAttributes(attributes);
         setSuccess(true);
         setEditing(false);
+        setAttributes({ ...attributes, profile_picture: null });
       } else {
         setError("Failed to update attributes. Please try again later.");
         setAttributes(initialAttributes);
