@@ -841,9 +841,10 @@ export async function CreateExecutionSheet(id, setExecutionSheetData, setError, 
     } catch { }
     // Optionally fetch the execution sheet (not required if page will fetch on navigation)
     if (setExecutionSheetData) {
-      const response = await fetch(`/rest/executionsheet/${newId}`);
+      const response = await fetch(`/rest/getExecution/${newId}`);
       if (!response.ok) throw new Error('Failed to fetch execution sheet');
       const sheet = await response.json();
+      console.log('Fetched execution sheet:', sheet);
       setExecutionSheetData(sheet);
     }
     // Navigate to the execution sheet page
@@ -872,7 +873,7 @@ export function ViewExecutionSheet() {
       if (!id) return;
       setLoading(true);
       try {
-        const response = await fetch(`/rest/executionsheet/${id}`);
+        const response = await fetch(`/rest/execution/getExecution/${id}`);
         if (response.status === 404) {
           if (mounted) setExecutionSheetData(null);
           // Do not show create prompt, just show error or export option
