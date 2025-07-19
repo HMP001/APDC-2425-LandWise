@@ -100,10 +100,17 @@ export default function Home() {
   const [verifyAccountLoading, setVerifyAccountLoading] = useState(false);
   const [verifyAccountError, setVerifyAccountError] = useState(null);
 
-  const { username, photo, role, token } = JSON.parse(
-    sessionStorage.getItem('userInfo') ||
-    '{"username": null, "photo": null, "role": "VU", "token": null}'
-  );
+  // Get user info from session storage, fallback to getJWTToken if not present
+  let userInfo = sessionStorage.getItem('userInfo');
+  let username, photo, role, token;
+  if (userInfo) {
+    ({ username, photo, role, token } = JSON.parse(userInfo));
+  } else {
+    username = null;
+    photo = null;
+    role = 'VU';
+    token = null;
+  }
 
   // TopBar with user menu
   const TopBar = (
@@ -383,8 +390,6 @@ function SelectWorksheet({ onClose, mode }) {
 // --- New component for execution sheet selection/creation ---
 function SelectExecutionSheet({ onClose, mode, loading, setLoading, error, setError, navigate }) {
   const [id, setId] = useState('');
-  const [assignUsername, setAssignUsername] = useState('');
-  const [assignKey, setAssignKey] = useState('');
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -395,83 +400,41 @@ function SelectExecutionSheet({ onClose, mode, loading, setLoading, error, setEr
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (mode === 'assign') {
-      if (!id.trim() || !assignUsername.trim() || !assignKey.trim()) {
-        setError("Please fill all fields.");
-        return;
-      }
-      setLoading(true);
-      setError(null);
-      try {
-        // Parse assignKey as 'polygonId_operationCode'
-        const [polygonId, operationCode] = assignKey.trim().split('_');
-        if (!polygonId || !operationCode) {
-          setError("Polygon-Operation Key must be in the format 'polygonId_operationCode'.");
-          setLoading(false);
-          return;
-        }
-        // AssignOperationRequest POJO expects execution_id and polygon_operations
-        const payload = {
-          execution_id: id.trim(),
-          polygon_operations: [
-            {
-              polygon_id: parseInt(polygonId, 10),
-              operations: [
-                {
-                  operation_code: operationCode,
-                  operator_username: assignUsername.trim()
-                }
-              ]
-            }
-          ]
-        };
-        const response = await fetch('/rest/execution/assign', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(payload)
-        });
-        if (response.ok) {
-          setError(null);
-          alert("Assignment successful.");
-          onClose();
-        } else {
-          const msg = await response.text();
-          setError("Failed to assign: " + msg);
-        }
-      } catch (e) {
-        setError("Error: " + e);
-      }
-      setLoading(false);
-      return;
-    }
-    if (id.trim() === '') {
-      alert("Please enter a valid Worksheet/Execution Sheet ID.");
-      return;
-    }
-    if (mode === 'view') {
-      navigate(`/executionsheet/${id}`);
-    } else if (mode === 'create') {
-      try {
-        await CreateExecutionSheet(id, null, setError, setLoading, navigate);
-      } catch (e) { }
-    } else if (mode === 'export') {
-      navigate(`/executionsheet/${id}?export=1`);
-    } else if (mode === 'start') {
-      navigate(`/executionsheet/${id}/start`);
-    } else if (mode === 'stop') {
-      navigate(`/executionsheet/${id}/stop`);
-    } else if (mode === 'viewact') {
-      navigate(`/executionsheet/${id}/activities`);
-    } else if (mode === 'addinfo') {
-      navigate(`/executionsheet/${id}/addinfo`);
-    } else if (mode === 'viewstatus') {
-      navigate(`/executionsheet/${id}/status`);
-    } else if (mode === 'editop') {
-      navigate(`/executionsheet/${id}/editop`);
-    } else {
-      setError("Invalid mode specified.");
+    switch (mode) {
+      case 'view':
+        navigate(`/executionsheet/${id}`);
+        break;
+      case 'create':
+        try {
+          await CreateExecutionSheet(id, null, setError, setLoading, navigate);
+        } catch (e) { }
+        break;
+      case 'export':
+        navigate(`/executionsheet/${id}?export=1`);
+        break;
+      case 'start':
+        navigate(`/executionsheet/${id}/start`);
+        break;
+      case 'stop':
+        navigate(`/executionsheet/${id}/stop`);
+        break;
+      case 'viewact':
+        navigate(`/executionsheet/${id}/activities`);
+        break;
+      case 'addinfo':
+        navigate(`/executionsheet/${id}/addinfo`);
+        break;
+      case 'viewstatus':
+        navigate(`/executionsheet/${id}/status`);
+        break;
+      case 'editop':
+        navigate(`/executionsheet/${id}/editop`);
+        break;
+      case 'assign':
+        navigate(`/executionsheet/${id}/assignoperator`);
+        break;
+      default:
+        setError("Invalid mode specified.");
     }
   };
 
@@ -506,32 +469,8 @@ function SelectExecutionSheet({ onClose, mode, loading, setLoading, error, setEr
             disabled={loading}
             autoFocus
           />
-          {mode === 'assign' && (
-            <>
-              <label htmlFor="assignUsername">Username to Assign:</label>
-              <input
-                type="text"
-                id="assignUsername"
-                value={assignUsername}
-                onChange={e => setAssignUsername(e.target.value)}
-                required
-                className="form-input"
-                disabled={loading}
-              />
-              <label htmlFor="assignKey">Polygon-Operation Key:</label>
-              <input
-                type="text"
-                id="assignKey"
-                value={assignKey}
-                onChange={e => setAssignKey(e.target.value)}
-                required
-                className="form-input"
-                disabled={loading}
-              />
-            </>
-          )}
           <button type="submit" className="btn btn-primary btn-small" disabled={loading}>
-            {loading ? (mode === 'assign' ? 'Assigning...' : 'Processing...') : (labelMap[mode] || 'Go')}
+            {loading ? ('Processing...') : (labelMap[mode] || 'Go')}
           </button>
           <button type="button" className="btn btn-danger btn-small" onClick={onClose} disabled={loading}>
             Cancel

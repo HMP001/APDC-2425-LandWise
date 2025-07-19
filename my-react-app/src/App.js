@@ -18,6 +18,10 @@ import { ViewExecutionSheet } from './execution/ExecutionSheet';
 import ExecutionSheetActivities from './execution/ExecutionSheetActivities';
 import ExecutionSheetEditOp from './execution/ExecutionSheetEditOp';
 import ExecutionSheetStatus from './execution/ExecutionSheetStatus';
+import ExecutionSheetStart from './execution/ExecutionSheetStart';
+import ExecutionSheetStop from './execution/ExecutionSheetStop';
+import ExecutionSheetAddInfo from './execution/ExecutionSheetAddInfo';
+import ExecutionAssignOperator from './execution/ExecutionAssignOperator';
 import Media from './Media';
 import Event from './Event';
 
@@ -56,6 +60,10 @@ function App() {
           <Route path="/executionsheet/:id/activities" element={<ExecutionSheetActivities />} />
           <Route path="/executionsheet/:id/editop" element={<ExecutionSheetEditOp />} />
           <Route path="/executionsheet/:id/status" element={<ExecutionSheetStatus />} />
+          <Route path="/executionsheet/:id/start" element={<ExecutionSheetStart />} />
+          <Route path="/executionsheet/:id/stop" element={<ExecutionSheetStop />} />
+          <Route path="/executionsheet/:id/addinfo" element={<ExecutionSheetAddInfo />} />
+          <Route path="/executionsheet/:id/assignoperator" element={<ExecutionAssignOperator />} />
           <Route path="/media" element={<Media />} />
           <Route path="/event" element={<Event />} />
           <Route path="*" element={<NotFound />} />

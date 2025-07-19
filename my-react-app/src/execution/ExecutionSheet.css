@@ -1,3 +1,127 @@
+/* Center the main card and form for assign operator, status, and activities */
+.execution-sheet-edit-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 80vh;
+  background: #f8f9fa;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.execution-sheet-edit-form {
+  width: 100%;
+  max-width: 500px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.07);
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.execution-sheet-edit-title {
+  text-align: center;
+  font-size: 2rem;
+  font-weight: 600;
+  margin-bottom: 32px;
+  color: #2c3e50;
+}
+
+.execution-sheet-edit-group {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 24px;
+}
+
+.execution-sheet-edit-label {
+  text-align: left;
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: #495057;
+}
+
+.execution-sheet-edit-input {
+  width: 100%;
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  font-size: 1rem;
+  box-sizing: border-box;
+}
+
+.execution-sheet-edit-textarea {
+  width: 100%;
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  font-size: 1rem;
+  resize: vertical;
+  min-height: 80px;
+  box-sizing: border-box;
+}
+
+.execution-sheet-edit-actions {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  width: 100%;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.execution-sheet-edit-error {
+  color: #c0392b;
+  text-align: center;
+  margin-top: 16px;
+  padding: 12px;
+  background: #ffebee;
+  border-radius: 6px;
+  border: 1px solid #ffcdd2;
+}
+
+.execution-sheet-edit-success {
+  color: #27ae60;
+  text-align: center;
+  margin-top: 16px;
+  padding: 12px;
+  background: #e8f5e8;
+  border-radius: 6px;
+  border: 1px solid #c8e6c9;
+}
+
+.execution-sheet-edit-modal {
+  max-width: 500px;
+  width: 100%;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  padding: 32px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.execution-sheet-edit-modal-title {
+  font-size: 1.3rem;
+  margin-bottom: 18px;
+  color: #2c3e50;
+  text-align: center;
+}
+
+.execution-sheet-edit-value {
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border: 1px solid #e9ecef;
+  color: #495057;
+}
+
 /* Execution Sheet Styles */
 .execution-sheet-container {
   max-width: 1200px;
@@ -534,9 +658,12 @@ input:disabled {
   background: #fff;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  padding: 12px;
+  padding: 16px;
   margin-bottom: 0;
   border: 1px solid #e9ecef;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .activity-card h4 {
@@ -557,10 +684,50 @@ input:disabled {
   margin-bottom: 6px;
 }
 
+.activity-card>div {
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  color: #2c3e50;
+}
+
+.activity-card>div strong {
+  margin-right: 8px;
+  min-width: 120px;
+  color: #495057;
+}
+
+.activity-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e9ecef;
+}
+
 .activities-placeholder {
   text-align: center;
   color: #6c757d;
   padding: 40px;
   background: #f8f9fa;
   border-radius: 8px;
+}
+
+/* Status details improvements */
+.status-details {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+.execution-sheet-edit-group strong {
+  color: #495057;
+  margin-right: 8px;
+}
+
+.execution-sheet-edit-group span {
+  color: #2c3e50;
 }

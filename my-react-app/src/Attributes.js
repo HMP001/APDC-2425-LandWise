@@ -347,7 +347,6 @@ export function Attributes() {
   const { user } = useParams(); // Use 'id' instead of 'entry'
 
   // If username is provided, use it as the username to fetch/edit, else use session user
-  const [profilePicture, setProfilePicture] = useState(null); // Add profile_picture field for file input
   const sessionUser = JSON.parse(sessionStorage.getItem('userInfo') || {});
   const username = user || sessionUser.username;
 

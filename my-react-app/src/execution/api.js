@@ -41,3 +41,13 @@ export async function stopActivityRequest(payload) {
   if (!res.ok) throw new Error('Failed to stop activity');
   return await res.json();
 }
+
+export async function addInfoRequest(formData) {
+  // Directly send FormData to backend
+  const res = await fetch('/rest/execution/addInfo', {
+    method: 'POST',
+    body: formData
+  });
+  if (!res.ok) throw new Error('Failed to add info');
+  return await res.json();
+}
