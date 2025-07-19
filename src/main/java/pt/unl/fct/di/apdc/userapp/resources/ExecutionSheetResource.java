@@ -486,7 +486,7 @@ public class ExecutionSheetResource {
 
         // Update status in Exec_Poly-Op
         Entity.Builder updatedBuilder = Entity.newBuilder(polyOpEntity)
-                .set("status", "executado")
+                //.set("status", "executado") // For now, we keep it as "em_execucao"
                 .set("finishing_date", today)
                 .set("last_activity_date", today);
 
@@ -741,6 +741,9 @@ public class ExecutionSheetResource {
                     act.addProperty("start_time", a.contains("start_time") ? a.getString("start_time") : "");
                     act.addProperty("end_time", a.contains("end_time") ? a.getString("end_time") : "");
                     act.addProperty("observations", a.contains("observations") ? a.getString("observations") : "");
+                    act.addProperty("gpx_track", a.contains("gpx_track") ? a.getString("gpx_track") : "");
+                    act.addProperty("photo_urls",
+                            a.contains("photo_urls") ? a.getString("photo_urls") : "[]");
 
                     if (a.contains("gpx_track")) {
                         try {
@@ -1393,13 +1396,13 @@ public class ExecutionSheetResource {
             JsonObject activity = new JsonObject();
             activity.addProperty("activity_id", entity.getKey().getName());
             activity.addProperty("execution_id", entity.getString("execution_id"));
-            activity.addProperty("operator_username", entity.getString("operator_username"));
+            activity.addProperty("operator_username",
+                entity.contains("operator_username") ? entity.getString("operator_username") : "");
             activity.addProperty("status", entity.getString("status"));
             activity.addProperty("start_time", entity.getString("start_time"));
             activity.addProperty("end_time", entity.getString("end_time"));
-            if (entity.contains("observations")) {
-                activity.addProperty("observations", entity.getString("observations"));
-            }
+            activity.addProperty("observations",
+                entity.contains("observations") ? entity.getString("observations") : "");
             activities.add(activity);
         }
         if (activities.size() == 0) {
