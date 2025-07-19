@@ -44,6 +44,7 @@ import pt.unl.fct.di.apdc.userapp.util.JWTToken;
 import pt.unl.fct.di.apdc.userapp.util.Roles;
 import pt.unl.fct.di.apdc.userapp.util.execution.AddInfoToActivityRequest;
 import pt.unl.fct.di.apdc.userapp.util.execution.AssignOperationRequest;
+import pt.unl.fct.di.apdc.userapp.util.execution.AssignOperationRequest.PolygonOperationAssignment;
 import pt.unl.fct.di.apdc.userapp.util.execution.CreateExecutionSheetRequest;
 import pt.unl.fct.di.apdc.userapp.util.execution.EditOperationRequest;
 import pt.unl.fct.di.apdc.userapp.util.execution.ExportExecutionRequest;
@@ -146,7 +147,7 @@ public class ExecutionSheetResource {
             JsonObject props = feature.getAsJsonObject("properties");
             if (!props.has("polygon_id"))
                 continue;
-            int polygonId = props.get("polygon_id").getAsInt();
+            String polygonId = props.get("polygon_id").getAsString();
 
             for (Map.Entry<String, Integer> entry : operationCodeToId.entrySet()) {
                 String opCode = entry.getKey();
@@ -223,54 +224,49 @@ public class ExecutionSheetResource {
         int assignedCount = 0;
         List<String> debugOutput = new ArrayList<>();
 
-        for (pt.unl.fct.di.apdc.userapp.util.execution.AssignOperationRequest.PolygonOperationAssignment assign : input.polygon_operations) {
-            if (assign == null || assign.polygon_id == 0 || assign.operations == null || assign.operations.isEmpty()) {
+        String operatorUsername = input.operator_username;
+
+        for (PolygonOperationAssignment assign : input.polygon_operations) {
+            if (assign == null || assign.polygon_id == null || assign.operation_code == null) {
                 debugOutput.add("⚠️ Missing fields in polygon_operations object.");
                 continue;
             }
-            int polygonId = assign.polygon_id;
-            for (pt.unl.fct.di.apdc.userapp.util.execution.AssignOperationRequest.OperationAssignment opObj : assign.operations) {
-                if (opObj == null || opObj.operation_code == null || opObj.operator_username == null) {
-                    debugOutput.add("⚠️ Missing fields in operations object for polygon " + polygonId);
-                    continue;
-                }
-                String operationCode = opObj.operation_code;
-                String operatorUsername = opObj.operator_username;
+            String polygonId = assign.polygon_id;
+            String operationCode = assign.operation_code;
 
-                // Validate operator
-                Key operatorKey = datastore.newKeyFactory().setKind("User").newKey(operatorUsername);
-                Entity operator = datastore.get(operatorKey);
-                if (operator == null) {
-                    debugOutput.add("❌ Operator not found: " + operatorUsername);
-                    continue;
-                }
-                if (!Roles.PO.equalsIgnoreCase(operator.getString("user_role"))) {
-                    debugOutput.add("❌ User " + operatorUsername + " is not a PO.");
-                    continue;
-                }
-                if (!operator.getString("user_employer").equals(employer)) {
-                    debugOutput.add("❌ Operator " + operatorUsername + " not from your organization.");
-                    continue;
-                }
-
-                // Update Exec_Poly-Op entity
-                PathElement execSheetAncestor = PathElement.of("ExecutionSheet", executionId);
-                String compositeKey = executionId + ":" + polygonId + ":" + operationCode;
-                Key polyOpKey = datastore.newKeyFactory().setKind("Exec_Poly-Op").addAncestor(execSheetAncestor)
-                        .newKey(compositeKey);
-                Entity polyOpEntity = datastore.get(polyOpKey);
-                if (polyOpEntity == null) {
-                    debugOutput.add("⚠️ Exec_Poly-Op entity not found for " + compositeKey);
-                    continue;
-                }
-                Entity updatedPolyOp = Entity.newBuilder(polyOpEntity)
-                        .set("operator_username", operatorUsername)
-                        .set("status", "atribuido")
-                        .build();
-                datastore.put(updatedPolyOp);
-                assignedCount++;
-                debugOutput.add("✅ Assigned " + operatorUsername + " to " + operationCode + " in polygon " + polygonId);
+            // Validate operator
+            Key operatorKey = datastore.newKeyFactory().setKind("User").newKey(operatorUsername);
+            Entity operator = datastore.get(operatorKey);
+            if (operator == null) {
+                debugOutput.add("❌ Operator not found: " + operatorUsername);
+                continue;
             }
+            if (!Roles.PO.equalsIgnoreCase(operator.getString("user_role"))) {
+                debugOutput.add("❌ User " + operatorUsername + " is not a PO.");
+                continue;
+            }
+            if (!operator.getString("user_employer").equals(employer)) {
+                debugOutput.add("❌ Operator " + operatorUsername + " not from your organization.");
+                continue;
+            }
+
+            // Update Exec_Poly-Op entity
+            PathElement execSheetAncestor = PathElement.of("ExecutionSheet", executionId);
+            String compositeKey = executionId + ":" + polygonId + ":" + operationCode;
+            Key polyOpKey = datastore.newKeyFactory().setKind("Exec_Poly-Op").addAncestor(execSheetAncestor)
+                    .newKey(compositeKey);
+            Entity polyOpEntity = datastore.get(polyOpKey);
+            if (polyOpEntity == null) {
+                debugOutput.add("⚠️ Exec_Poly-Op entity not found for " + compositeKey);
+                continue;
+            }
+            Entity updatedPolyOp = Entity.newBuilder(polyOpEntity)
+                    .set("operator_username", operatorUsername)
+                    .set("status", "atribuido")
+                    .build();
+            datastore.put(updatedPolyOp);
+            assignedCount++;
+            debugOutput.add("✅ Assigned " + operatorUsername + " to " + operationCode + " in polygon " + polygonId);
         }
 
         JsonObject response = new JsonObject();
@@ -301,7 +297,7 @@ public class ExecutionSheetResource {
         if (!Roles.PO.equalsIgnoreCase(role))
             return forbidden("Only PO can start activities");
 
-        if (input == null || input.execution_id == null || input.polygon_id == 0 || input.operation_code == null)
+        if (input == null || input.execution_id == null || input.polygon_id == null || input.operation_code == null)
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("{\"error\":\"Missing execution_id, polygon_id or operation_code\"}").build();
 
@@ -391,7 +387,7 @@ public class ExecutionSheetResource {
         if (!Roles.PO.equalsIgnoreCase(role))
             return forbidden("Only PO can stop activities");
 
-        if (input == null || input.execution_id == null || input.polygon_id == 0 || input.operation_code == null
+        if (input == null || input.execution_id == null || input.polygon_id == null || input.operation_code == null
                 || input.activity_id == null)
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("{\"error\":\"Missing execution_id, polygon_id, operation_code or activity_id\"}").build();
@@ -922,7 +918,7 @@ public class ExecutionSheetResource {
         while (polyOpsResults.hasNext()) {
             Entity polyOpsEntity = polyOpsResults.next();
             JsonObject polyJson = new JsonObject();
-            polyJson.addProperty("polygon_id", polyOpsEntity.getLong("polygon_id"));
+            polyJson.addProperty("polygon_id", polyOpsEntity.getString("polygon_id"));
             polyJson.addProperty("operation_code", polyOpsEntity.getString("operation_code"));
             polyJson.addProperty("operation_id", polyOpsEntity.getLong("operation_id"));
             polyJson.addProperty("status", polyOpsEntity.getString("status"));
@@ -943,7 +939,7 @@ public class ExecutionSheetResource {
                     .setKind("ExecutionActivity")
                     .setFilter(StructuredQuery.CompositeFilter.and(
                             StructuredQuery.PropertyFilter.eq("execution_id", executionId),
-                            StructuredQuery.PropertyFilter.eq("polygon_id", polyOpsEntity.getLong("polygon_id")),
+                            StructuredQuery.PropertyFilter.eq("polygon_id", polyOpsEntity.getString("polygon_id")),
                             StructuredQuery.PropertyFilter.eq("operation_code",
                                     polyOpsEntity.getString("operation_code"))))
                     .build();
