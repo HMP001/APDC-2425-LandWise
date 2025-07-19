@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { editOperationRequest } from './api';
 import { topBar } from '../TopBar';
+import CheckRequests from '../CheckRequests';
 import './ExecutionSheet.css';
 
 export default function ExecutionSheetEditOp() {
@@ -22,18 +23,22 @@ export default function ExecutionSheetEditOp() {
     setError(null);
     try {
       const res = await fetch(`/rest/execution/getOperation/${id}/${code}`);
+      CheckRequests(res, navigate);
       if (!res.ok) throw new Error('Failed to fetch operation.');
       const op = await res.json();
+      console.log('Fetched operation:', op);
       setOperation(op);
       setEditFields({
         observations: op.observations || '',
         expected_start: op.expected_start || '',
         expected_end: op.expected_end || '',
+        expected_duration_hours: op.expected_duration_hours || ''
       });
       setOriginalFields({
         observations: op.observations || '',
         expected_start: op.expected_start || '',
         expected_end: op.expected_end || '',
+        expected_duration_hours: op.expected_duration_hours || ''
       });
       setShowModal(false);
     } catch (e) {
@@ -43,11 +48,15 @@ export default function ExecutionSheetEditOp() {
     }
   };
 
-    if (loading) {
+  if (loading) {
     return (
-      <div className="execution-sheet-container">
-        <div className="loading-spinner">Loading operation...</div>
-      </div>
+      <>
+        {topBar(navigate)}
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Loading operation...</p>
+        </div>
+      </>
     );
   }
 
@@ -65,8 +74,8 @@ export default function ExecutionSheetEditOp() {
       await editOperationRequest(id, {
         operation_code: operation.operation_code,
         observations: editFields.observations,
-        expected_start: editFields.expected_start,
-        expected_end: editFields.expected_end,
+        expected_finish_date: editFields.expected_end,
+        expected_duration_hours: editFields.expected_duration_hours
       });
       setSuccess(true);
       setOriginalFields({ ...editFields });
@@ -90,11 +99,18 @@ export default function ExecutionSheetEditOp() {
             type="text"
             value={operationCode}
             onChange={e => setOperationCode(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                fetchOperation(operationCode);
+              }
+            }}
             placeholder="Operation Code"
             className="form-control execution-sheet-edit-input"
             disabled={loading}
           />
-          <button className="btn btn-primary execution-sheet-edit-btn" onClick={() => fetchOperation(operationCode)} disabled={loading || !operationCode}>
+          <button className="btn btn-primary execution-sheet-edit-btn" 
+            onClick={() => fetchOperation(operationCode)}
+            disabled={loading || !operationCode}>
             {loading ? 'Loading...' : 'Fetch Operation'}
           </button>
           {error && <div className="error-message execution-sheet-edit-error">{error}</div>}
@@ -134,6 +150,17 @@ export default function ExecutionSheetEditOp() {
               type="date"
               name="expected_end"
               value={editFields.expected_end}
+              onChange={handleFieldChange}
+              className="form-control execution-sheet-edit-input"
+              disabled={loading}
+            />
+          </div>
+          <div className="form-group execution-sheet-edit-group">
+            <label className="execution-sheet-edit-label">Expected Duration (hours):</label>
+            <input
+              type="number"
+              name="expected_duration_hours"
+              value={editFields.expected_duration_hours}
               onChange={handleFieldChange}
               className="form-control execution-sheet-edit-input"
               disabled={loading}
