@@ -1,4 +1,3 @@
-
 package pt.unl.fct.di.apdc.userapp.resources;
 
 import java.io.InputStream;
@@ -9,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 import org.glassfish.jersey.media.multipart.FormDataParam;
@@ -31,6 +31,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.protobuf.ListValue;
 
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.CookieParam;
@@ -48,6 +49,7 @@ import jakarta.ws.rs.core.Response.Status;
 import pt.unl.fct.di.apdc.userapp.util.EditWorkSheetRequest;
 import pt.unl.fct.di.apdc.userapp.util.FilterRequest;
 import pt.unl.fct.di.apdc.userapp.util.JWTToken;
+import pt.unl.fct.di.apdc.userapp.util.RolePermissions;
 import pt.unl.fct.di.apdc.userapp.util.Roles;
 import pt.unl.fct.di.apdc.userapp.util.WorkSheetData;
 import pt.unl.fct.di.apdc.userapp.util.WorkSheetSearchRequest;
@@ -92,8 +94,9 @@ public class WorkSheetResource {
         String requesterRole = jwt.getClaim("role").asString();
         Key key = datastore.newKeyFactory().setKind("WorkSheet").newKey(data.id);
         
-        if (!Roles.SMBO.equalsIgnoreCase(requesterRole))
-            return forbidden("Only SMBO can create worksheets.");
+        if (!RolePermissions.canPerform(requesterRole, "CREATE_WORKSHEET")) {
+            return forbidden("Role " + requesterRole + " is not authorized to create worksheets.");
+        }
         if (!data.valid())
             return Response.status(Response.Status.BAD_REQUEST).entity("{\"message\":\"Missing required fields.\"}").build();
         if (datastore.get(key) != null)
@@ -152,8 +155,9 @@ public class WorkSheetResource {
                            .entity("{\"message\":\"Failed to decode token.\"}").build();
             	}
             	String requesterRole = jwt.getClaim("role").asString();
-                if (!Roles.SMBO.equalsIgnoreCase(requesterRole)) return forbidden("Only SMBO can upload worksheets.");
-    
+                if (!RolePermissions.canPerform(requesterRole, "UPLOAD_WORKSHEET")) {
+                    return forbidden("Role " + requesterRole + " is not authorized to upload worksheets.");
+                }
                 String content = new String(uploadedInputStream.readAllBytes());
                 JsonObject root = JsonParser.parseString(content).getAsJsonObject();
         
@@ -190,11 +194,10 @@ public class WorkSheetResource {
     	}
     	
     	String requesterRole = jwt.getClaim("role").asString();
-    	if (!Set.of(Roles.SMBO, Roles.SGVBO, Roles.SDVBO).contains(requesterRole)) {
+    	if (!RolePermissions.canPerform(requesterRole, "VIEW_WORKSHEET")) {
             return Response.status(Status.FORBIDDEN)
-                    .entity("{\"message\":\"Not authorized to search worksheets.\"}").build();
+            .entity("{\"message\":\"Role " + requesterRole + " is not authorized to view worksheets.\"}").build();
         }
-    	
         Key key = datastore.newKeyFactory().setKind("WorkSheet").newKey(id);
         Entity entity = datastore.get(key);
 
@@ -233,11 +236,10 @@ public class WorkSheetResource {
     	}
     	
     	String requesterRole = jwt.getClaim("role").asString();
-    	if (!Set.of(Roles.SMBO, Roles.SDVBO).contains(requesterRole)) {
+    	if (!RolePermissions.canPerform(requesterRole, "VIEW_WORKSHEET_DETAILED")) {
             return Response.status(Status.FORBIDDEN)
-                    .entity("{\"message\":\"Not authorized to view worksheets.\"}").build();
+            .entity("{\"message\":\"Role " + requesterRole + " is not authorized to view detailed worksheets.\"}").build();
         }
-
         Key key = datastore.newKeyFactory().setKind("WorkSheet").newKey(id);
         Entity entity = datastore.get(key);
 
@@ -281,9 +283,9 @@ public class WorkSheetResource {
     	}
     	String requesterRole = jwt.getClaim("role").asString();
     	
-        Set<String> allowed = Set.of("smbo", "backoffice", "admin", Roles.SGVBO, Roles.SDVBO, Roles.SYSADMIN, Roles.SYSBO);
-        if (!allowed.contains(requesterRole.toLowerCase())) return forbidden("Not allowed to list worksheets.");
-
+        if (!RolePermissions.canPerform(requesterRole, "LIST_WORKSHEETS")) {
+            return forbidden("Role " + requesterRole + " is not allowed to list worksheets.");
+    }
         EntityQuery.Builder builder = Query.newEntityQueryBuilder().setKind("WorkSheet");
         if (filter.status != null && !filter.status.isEmpty())
             builder.setFilter(StructuredQuery.PropertyFilter.eq("status", filter.status));
@@ -324,8 +326,9 @@ public class WorkSheetResource {
     	}
     	String requesterUsername = jwt.getSubject();
     	String requesterRole = jwt.getClaim("role").asString();
-        if (!Roles.PRBO.equalsIgnoreCase(requesterRole))
-            return forbidden("Only PRBO can update status.");
+        if (!RolePermissions.canPerform(requesterRole, "UPDATE_WORKSHEET_STATUS")) {
+            return forbidden("Role " + requesterRole + " cannot update worksheet status.");
+        }
 
         Key key = datastore.newKeyFactory().setKind("WorkSheet").newKey(data.id);
         Entity ws = datastore.get(key);
@@ -359,8 +362,11 @@ public class WorkSheetResource {
         String requesterRole = jwt.getClaim("role").asString();
         Map<String, String> newAttributes = request.attributesEdited;
 
-        if (!Roles.SMBO.equalsIgnoreCase(requesterRole)) {
-            return Response.status(Status.FORBIDDEN).entity("{\"message\":\"Only SMBO can edit worksheets.\"}").build();}
+        if (!RolePermissions.canPerform(requesterRole, "EDIT_WORKSHEET")) {
+            return Response.status(Status.FORBIDDEN)
+            .entity("{\"message\":\"Role " + requesterRole + " not authorized to edit worksheets.\"}")
+            .build();
+}
 
         Key key = datastore.newKeyFactory().setKind("WorkSheet").newKey(request.id);
         Entity ws = datastore.get(key);
@@ -416,10 +422,11 @@ public class WorkSheetResource {
         DecodedJWT jwt = JWTToken.extractJWT(token);
         String requesterRole = jwt.getClaim("role").asString();
         
-        if (!Set.of(Roles.SMBO, Roles.SGVBO).contains(requesterRole)) {
+        if (!RolePermissions.canPerform(requesterRole, "SEARCH_WORKSHEET")) {
             return Response.status(Status.FORBIDDEN)
-                    .entity("{\"message\":\"Not authorized to search worksheets.\"}").build();
-        }
+                .entity("{\"message\":\"Not authorized to search worksheets.\"}")
+                .build();
+}
         
         EntityQuery.Builder queryBuilder = Query.newEntityQueryBuilder().setKind("WorkSheet");
         List<StructuredQuery.Filter> filters = new ArrayList<>();
@@ -517,11 +524,10 @@ public class WorkSheetResource {
         DecodedJWT jwt = JWTToken.extractJWT(token);
         String requesterRole = jwt.getClaim("role").asString();
         
-        if (!Set.of(Roles.SMBO, Roles.SDVBO).contains(requesterRole)) {
+        if (!RolePermissions.canPerform(requesterRole, "SEARCH_WORKSHEET_DETAILED")) {
             return Response.status(Status.FORBIDDEN)
-                    .entity("{\"message\":\"Not authorized to search worksheets.\"}").build();
+             .entity("{\"message\":\"Not authorized to search worksheets.\"}").build();
         }
-        
         EntityQuery.Builder queryBuilder = Query.newEntityQueryBuilder().setKind("WorkSheet");
         List<StructuredQuery.Filter> filters = new ArrayList<>();
         
@@ -598,10 +604,34 @@ public class WorkSheetResource {
 
     @DELETE
     @Path("/delete/{id}")
-    public Response deleteWorksheet(@PathParam("id") String id,
-                                    @CookieParam("session::apdc") Cookie cookie,
-                                    @HeaderParam("Authorization") String authHeader) {
+    public Response deleteWorksheet(@PathParam("id") String id, @CookieParam("session::apdc") Cookie cookie, @HeaderParam("Authorization") String authHeader) {
+    	String token = extractJWT(cookie, authHeader);
+    	if (token == null || !JWTToken.validateJWT(token)) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Invalid or expired session.\"}").build();
+        }
+    	
+    	DecodedJWT jwt = JWTToken.extractJWT(token);
+    	if (jwt == null) {
+           return Response.status(Response.Status.UNAUTHORIZED)
+                   .entity("{\"message\":\"Failed to decode token.\"}").build();
+    	}
+    	String requesterRole = jwt.getClaim("role").asString();
+        if (!RolePermissions.canPerform(requesterRole, "DELETE_WORKSHEET"))
+            return forbidden("User not authorized to delete worksheets.");
 
+
+        Key key = datastore.newKeyFactory().setKind("WorkSheet").newKey(id);
+        Entity entity = datastore.get(key);
+        if (entity == null) return Response.status(Response.Status.NOT_FOUND).build();
+
+        datastore.delete(key);
+        return Response.ok("{\"message\":\"Worksheet deleted.\"}").build();
+    }
+
+    @GET
+    @Path("/mapdata")
+    public Response getMapData(@CookieParam("session::apdc") Cookie cookie, @HeaderParam("Authorization") String authHeader) {
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token)) {
             return Response.status(Response.Status.UNAUTHORIZED)
@@ -609,71 +639,11 @@ public class WorkSheetResource {
         }
 
         DecodedJWT jwt = JWTToken.extractJWT(token);
-        if (jwt == null) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                    .entity("{\"message\":\"Failed to decode token.\"}").build();
-        }
-
         String requesterRole = jwt.getClaim("role").asString();
-        if (!Set.of(Roles.SYSADMIN, Roles.SMBO).contains(requesterRole))
-            return forbidden("Only SMBO or SYSADMIN can delete worksheets.");
 
-        // Apagar Worksheet
-        Key worksheetKey = datastore.newKeyFactory().setKind("WorkSheet").newKey(id);
-        Entity worksheetEntity = datastore.get(worksheetKey);
-        if (worksheetEntity == null)
-            return Response.status(Response.Status.NOT_FOUND).build();
-
-        List<Key> keysToDelete = new ArrayList<>();
-        keysToDelete.add(worksheetKey);
-
-        // Procurar ExecutionSheet com o mesmo id
-        Key execKey = datastore.newKeyFactory().setKind("ExecutionSheet").newKey(id);
-        Entity execEntity = datastore.get(execKey);
-        if (execEntity != null) {
-            keysToDelete.add(execKey);
-
-            // Apagar Exec_Poly-Op
-            Query<Entity> polyOpQuery = Query.newEntityQueryBuilder()
-                    .setKind("Exec_Poly-Op")
-                    .setFilter(StructuredQuery.PropertyFilter.eq("execution_id", id))
-                    .build();
-            QueryResults<Entity> polyOps = datastore.run(polyOpQuery);
-            while (polyOps.hasNext()) {
-                keysToDelete.add(polyOps.next().getKey());
-            }
-
-            // Apagar ExecutionActivity
-            Query<Entity> activityQuery = Query.newEntityQueryBuilder()
-                    .setKind("ExecutionActivity")
-                    .setFilter(StructuredQuery.PropertyFilter.eq("execution_id", id))
-                    .build();
-            QueryResults<Entity> activities = datastore.run(activityQuery);
-            while (activities.hasNext()) {
-                keysToDelete.add(activities.next().getKey());
-            }
-        }
-
-        // Executar eliminação em batch
-        datastore.delete(keysToDelete.toArray(new Key[0]));
-
-        JsonObject result = new JsonObject();
-        result.addProperty("message", "Worksheet and related execution data deleted.");
-        result.addProperty("worksheet_id", id);
-        result.addProperty("deleted_execution_sheet", execEntity != null);
-        result.addProperty("deleted_poly_ops", keysToDelete.stream().filter(k -> k.getKind().equals("Exec_Poly-Op")).count());
-        result.addProperty("deleted_activities", keysToDelete.stream().filter(k -> k.getKind().equals("ExecutionActivity")).count());
-
-        return Response.ok(g.toJson(result)).build();
-    }
-
-    @GET
-    @Path("/mapdata")
-    public Response getMapData(@CookieParam("session::apdc") Cookie cookie, @HeaderParam("Authorization") String authHeader) {
-    	String token = extractJWT(cookie, authHeader);
-    	if (token == null || !JWTToken.validateJWT(token)) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                    .entity("{\"message\":\"Invalid or expired session.\"}").build();
+        if (!RolePermissions.canPerform(requesterRole, "VIEW_MAP")) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity("{\"message\":\"You are not authorized to view map data.\"}").build();
         }
 
         Query<Entity> query = Query.newEntityQueryBuilder().setKind("WorkSheet").build();
@@ -693,13 +663,22 @@ public class WorkSheetResource {
         return Response.ok(new Gson().toJson(mapped)).build();
     }
 
+
     @GET
     @Path("/stats")
     public Response getStatistics(@CookieParam("session::apdc") Cookie cookie, @HeaderParam("Authorization") String authHeader) {
-    	String token = extractJWT(cookie, authHeader);
-    	if (token == null || !JWTToken.validateJWT(token)) {
+        String token = extractJWT(cookie, authHeader);
+        if (token == null || !JWTToken.validateJWT(token)) {
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity("{\"message\":\"Invalid or expired session.\"}").build();
+        }
+
+        DecodedJWT jwt = JWTToken.extractJWT(token);
+        String requesterRole = jwt.getClaim("role").asString();
+
+        if (!RolePermissions.canPerform(requesterRole, "VIEW_STATS")) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity("{\"message\":\"You are not authorized to view worksheet statistics.\"}").build();
         }
 
         Map<String, Integer> stats = new HashMap<>();
@@ -720,10 +699,18 @@ public class WorkSheetResource {
     @Path("/export")
     @Produces("text/csv")
     public Response exportWorksheets(@CookieParam("session::apdc") Cookie cookie, @HeaderParam("Authorization") String authHeader) {
-    	String token = extractJWT(cookie, authHeader);
-    	if (token == null || !JWTToken.validateJWT(token)) {
+        String token = extractJWT(cookie, authHeader);
+        if (token == null || !JWTToken.validateJWT(token)) {
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity("{\"message\":\"Invalid or expired session.\"}").build();
+        }
+
+        DecodedJWT jwt = JWTToken.extractJWT(token);
+        String requesterRole = jwt.getClaim("role").asString();
+
+        if (!RolePermissions.canPerform(requesterRole, "EXPORT_WORKSHEETS")) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity("{\"message\":\"You are not authorized to export worksheets.\"}").build();
         }
 
         Query<Entity> query = Query.newEntityQueryBuilder().setKind("WorkSheet").build();
@@ -733,14 +720,15 @@ public class WorkSheetResource {
         while (results.hasNext()) {
             Entity e = results.next();
             sb.append(e.getKey().getName()).append(",")
-              .append(e.getString("title")).append(",")
-              .append(e.getString("status")).append("\n");
+            .append(e.getString("title")).append(",")
+            .append(e.getString("status")).append("\n");
         }
 
         return Response.ok(sb.toString())
-            .header("Content-Disposition", "attachment; filename=worksheets.csv")
-            .build();
+                .header("Content-Disposition", "attachment; filename=worksheets.csv")
+                .build();
     }
+
 
     private Response unauthorized(String msg) {
         return Response.status(Status.UNAUTHORIZED)
