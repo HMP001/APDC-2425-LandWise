@@ -1357,7 +1357,9 @@ public class ExecutionSheetResource {
             activity.addProperty("status", entity.getString("status"));
             activity.addProperty("start_time", entity.getString("start_time"));
             activity.addProperty("end_time", entity.getString("end_time"));
-            activity.addProperty("observations", nvl(entity.getString("observations"), ""));
+            if (entity.contains("observations")) {
+                activity.addProperty("observations", entity.getString("observations"));
+            }
             activities.add(activity);
         }
         if (activities.size() == 0) {
