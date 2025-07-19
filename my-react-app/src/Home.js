@@ -245,6 +245,7 @@ export default function Home() {
     { label: 'Add Info to Activity', onClick: () => setExecSheetModal('addinfo'), show: ['PO', 'PRBO', 'SDVBO', 'SYSBO', 'SYSADMIN'].includes(role) },
     { label: 'View Operation Status', onClick: () => setExecSheetModal('viewstatus'), show: role === 'PRBO' || role === 'SDVBO' },
     { label: 'Edit Operation', onClick: () => setExecSheetModal('editop'), show: role === 'PRBO' || role === 'SDVBO' },
+    { label: 'View Assigned List', onClick: () => setExecSheetModal('assignedlist'), show: role === 'PRBO' || role === 'SDVBO' || role === 'PO' },
   ];
 
   return (
@@ -432,6 +433,9 @@ function SelectExecutionSheet({ onClose, mode, loading, setLoading, error, setEr
         break;
       case 'assign':
         navigate(`/executionsheet/${id}/assignoperator`);
+        break;
+      case 'assignedlist':
+        navigate(`/executionsheet/${id}/assignedlist`);
         break;
       default:
         setError("Invalid mode specified.");

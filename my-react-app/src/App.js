@@ -22,6 +22,7 @@ import ExecutionSheetStart from './execution/ExecutionSheetStart';
 import ExecutionSheetStop from './execution/ExecutionSheetStop';
 import ExecutionSheetAddInfo from './execution/ExecutionSheetAddInfo';
 import ExecutionAssignOperator from './execution/ExecutionAssignOperator';
+import ExecutionSheetAssignedList from './execution/ExecutionSheetAssignedList';
 import Media from './Media';
 import Event from './Event';
 
@@ -64,6 +65,7 @@ function App() {
           <Route path="/executionsheet/:id/stop" element={<ExecutionSheetStop />} />
           <Route path="/executionsheet/:id/addinfo" element={<ExecutionSheetAddInfo />} />
           <Route path="/executionsheet/:id/assignoperator" element={<ExecutionAssignOperator />} />
+          <Route path="/executionsheet/:id/assignedlist" element={<ExecutionSheetAssignedList />} />
           <Route path="/media" element={<Media />} />
           <Route path="/event" element={<Event />} />
           <Route path="*" element={<NotFound />} />

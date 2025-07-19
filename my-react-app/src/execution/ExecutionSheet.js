@@ -13,6 +13,7 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
   const [isLoading, setIsLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [selectedPolygon, setSelectedPolygon] = useState(null);
+  const [selectedActivity, setSelectedActivity] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [searchPolygonKey, setSearchPolygonKey] = useState('');
   const [assignmentState, setAssignmentState] = useState({}); // { [polygonId_operationId]: { username, loading, error, assignedTo } }
@@ -81,7 +82,7 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
           operations: [
             {
               operation_code: "PLOWING",
-              status: "completed",
+              status: "executado",
               starting_date: "2025-07-01",
               finishing_date: "2025-07-02",
               last_activity_date: "2025-07-02",
@@ -97,16 +98,24 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
                 {
                   activity_id: "act-101-plowing",
                   type: "plowing",
-                  status: "completed",
+                  status: "executado",
                   started_by: "alice",
                   started_at: "2025-07-01",
-                  finished_at: "2025-07-02"
+                  finished_at: "2025-07-02",
+                  gps_track: {
+                    type: "LineString",
+                    coordinates: [[10.5, 45.2], [10.6, 45.3], [10.7, 45.4], [10.8, 45.5]]
+                  },
+                  photo_urls: [
+                    "/dummy-media-1.jpg",
+                    "/background-home.jpg"
+                  ]
                 }
               ]
             },
             {
               operation_code: "SEEDING",
-              status: "ongoing",
+              status: "em_execucao",
               starting_date: "2025-07-04",
               finishing_date: null,
               observations: "Seeding 60% complete",
@@ -116,10 +125,17 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
                 {
                   activity_id: "act-101-seeding",
                   type: "seeding",
-                  status: "ongoing",
+                  status: "em_execucao",
                   started_by: "bob",
                   started_at: "2025-07-04",
-                  finished_at: null
+                  finished_at: null,
+                  gps_track: {
+                    type: "LineString",
+                    coordinates: [[10.9, 45.6], [11.0, 45.7]]
+                  },
+                  photo_urls: [
+                    "/dummy-profile-1.png"
+                  ]
                 }
               ]
             }
@@ -130,7 +146,7 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
           operations: [
             {
               operation_code: "PLOWING",
-              status: "unassigned",
+              status: "nao_iniciado",
               starting_date: null,
               finishing_date: null,
               last_activity_date: null,
@@ -141,7 +157,7 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
             },
             {
               operation_code: "SEEDING",
-              status: "unassigned",
+              status: "nao_iniciado",
               starting_date: null,
               finishing_date: null,
               last_activity_date: null,
@@ -156,13 +172,30 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
     };
   };
 
-  // Get status badge color
+  // Status translation functions
+  const getStatusDisplayText = (status) => {
+    switch (status) {
+      case 'completed':
+      case 'executado': return 'Executado';
+      case 'ongoing':
+      case 'em_execucao': return 'Em execução';
+      case 'assigned': return 'Atribuído';
+      case 'unassigned':
+      case 'nao_iniciado': return 'Não iniciado';
+      default: return status;
+    }
+  };
+
+  // Get status badge color - updated colors per requirements
   const getStatusColor = (status) => {
     switch (status) {
-      case 'completed': return '#28a745';
-      case 'ongoing': return '#ffc107';
-      case 'assigned': return '#17a2b8';
-      case 'unassigned': return '#6c757d';
+      case 'completed':
+      case 'executado': return '#28a745'; // green
+      case 'ongoing':
+      case 'em_execucao': return '#007bff'; // blue
+      case 'assigned': return '#17a2b8'; // cyan
+      case 'unassigned':
+      case 'nao_iniciado': return '#dc3545'; // red
       default: return '#6c757d';
     }
   };
@@ -170,7 +203,7 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
   // Calculate completion percentage for polygon operations
   const getPolygonCompletionPercentage = (polygonOps) => {
     if (!polygonOps.operations.length) return 0;
-    const completedOps = polygonOps.operations.filter(op => op.status === 'completed').length;
+    const completedOps = polygonOps.operations.filter(op => op.status === 'executado' || op.status === 'completed').length;
     return Math.round((completedOps / polygonOps.operations.length) * 100);
   };
 
@@ -301,14 +334,14 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
             const newActivity = {
               activity_id: `act-${polygonId}-${operationCode}`,
               type: operationCode.toLowerCase(),
-              status: "ongoing",
+              status: "em_execucao",
               started_by: username,
               started_at: new Date().toISOString().split('T')[0],
               finished_at: null
             };
             operation.activities = operation.activities || [];
             operation.activities.push(newActivity);
-            operation.status = "ongoing";
+            operation.status = "em_execucao";
             operation.starting_date = newActivity.started_at;
             operation.assigned_to = username;
           }
@@ -424,36 +457,42 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
                 const polygonOps = executionSheet.polygon_operations.find(po => po.polygon_id === selectedPolygon);
                 if (!polygonOps) return <div>No polygon selected.</div>;
                 return (
-                  <div
-                    className="activities-grid"
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr',
-                      gap: 24,
-                      maxHeight: 700,
-                      overflowY: 'auto',
-                      padding: '8px',
-                      margin: '0 auto',
-                      width: '100%',
-                      boxSizing: 'border-box',
-                      background: '#fafbfc',
-                      borderRadius: 12,
-                      border: '1px solid #e3e6ea'
-                    }}
-                  >
+                  <div className="activities-grid">
                     {polygonOps.operations.map((operation) => (
-                      <div key={operation.operation_code} className="activity-card" style={{ background: '#fff', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.04)', padding: '12px', marginBottom: 0 }}>
+                      <div key={operation.operation_code} className="activity-card">
                         <h4>{operation.operation_code}</h4>
                         {operation.activities && operation.activities.length > 0 ? (
-                          <ul>
+                          <div className="activities-scroll-container">
                             {operation.activities.map(act => (
-                              <li key={act.activity_id}>
-                                <strong>{act.type}</strong> - {act.status} by {act.started_by} at {act.started_at}
-                                {act.finished_at && `, finished at ${act.finished_at}`}
-                                {act.observations && <span> | Obs: {act.observations}</span>}
-                              </li>
+                              <div
+                                key={act.activity_id}
+                                className={`activity-item ${selectedActivity?.activity_id === act.activity_id ? 'selected' : ''}`}
+                                onClick={() => setSelectedActivity(act)}
+                              >
+                                <div className="activity-header">
+                                  {act.activity_id && (
+                                    <span className="activity-id-badge">
+                                      {act.activity_id}
+                                    </span>
+                                  )}
+                                  <span className="activity-type">{act.type}</span>
+                                  <span className={`activity-status status-${act.status}`}>
+                                    {getStatusDisplayText(act.status)}
+                                  </span>
+                                </div>
+                                <div className="activity-info">
+                                  <small><strong>Operator:</strong> {act.started_by || act.operator_username || 'N/A'}</small>
+                                  <small><strong>Start:</strong> {act.started_at || act.start_time ?
+                                    new Date(act.started_at || act.start_time).toLocaleString() : 'N/A'}</small>
+                                  <small><strong>End:</strong> {act.finished_at || act.end_time ?
+                                    new Date(act.finished_at || act.end_time).toLocaleString() : 'Ongoing'}</small>
+                                  {act.observations && (
+                                    <small><strong>Obs:</strong> {act.observations}</small>
+                                  )}
+                                </div>
+                              </div>
                             ))}
-                          </ul>
+                          </div>
                         ) : (
                           <p>No activities recorded for this operation.</p>
                         )}
@@ -465,6 +504,64 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
             ) : (
               <div className="activities-placeholder">
                 <p>Select a polygon from the Polygon Operations tab to view its activities.</p>
+              </div>
+            )}
+
+            {/* Selected Activity Details */}
+            {selectedActivity && (
+              <div className="selected-activity-details">
+                <h3>Activity Details: {selectedActivity.activity_id}</h3>
+                <div className="activity-details-grid">
+
+                  {/* GPS Tracking Section */}
+                  <div className="activity-detail-section">
+                    <h4>GPS Tracking</h4>
+                    {selectedActivity.gps_track ? (
+                      <div className="gps-track-container">
+                        <details>
+                          <summary>View GPS Track ({selectedActivity.gps_track.coordinates?.length || 0} points)</summary>
+                          <div className="gps-coordinates-list">
+                            {selectedActivity.gps_track.coordinates?.map((coord, index) => (
+                              <div key={index} className="gps-coordinate">
+                                Point {index + 1}: Lng: {coord[0]}, Lat: {coord[1]}
+                              </div>
+                            )) || <p>No GPS coordinates available</p>}
+                          </div>
+                        </details>
+                      </div>
+                    ) : (
+                      <p>No GPS tracking data available for this activity.</p>
+                    )}
+                  </div>
+
+                  {/* Photos Section */}
+                  <div className="activity-detail-section">
+                    <h4>Photos</h4>
+                    {selectedActivity.photo_urls && selectedActivity.photo_urls.length > 0 ? (
+                      <div className="photos-container">
+                        <details>
+                          <summary>View Photos ({selectedActivity.photo_urls.length})</summary>
+                          <div className="photos-grid">
+                            {selectedActivity.photo_urls.map((photoUrl, index) => (
+                              <div key={index} className="photo-item">
+                                <img
+                                  src={photoUrl}
+                                  alt={`Activity ${index + 1}`}
+                                  className="activity-photo"
+                                  onClick={() => window.open(photoUrl, '_blank')}
+                                />
+                                <span className="photo-label">Photo {index + 1}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      </div>
+                    ) : (
+                      <p>No photos available for this activity.</p>
+                    )}
+                  </div>
+
+                </div>
               </div>
             )}
           </div>
@@ -655,40 +752,12 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
                 Go
               </button>
             </div>
-            <div
-              className="polygons-grid"
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: 24,
-                maxHeight: 700, // About 3 cards tall, but flexible for card content
-                overflowY: 'auto',
-                padding: '8px',
-                margin: '0 auto',
-                width: '100%',
-                boxSizing: 'border-box',
-                background: '#fafbfc',
-                borderRadius: 12,
-                border: '1px solid #e3e6ea'
-              }}
-            >
+            <div className="polygons-grid">
               {executionSheet.polygon_operations.map((polygonOps) => (
                 <div
                   key={polygonOps.polygon_id}
                   id={`polygon-card-${polygonOps.polygon_id}`}
                   className={`polygon-card ${selectedPolygon === polygonOps.polygon_id ? 'selected' : ''}`}
-                  style={{
-                    background: '#fff',
-                    border: selectedPolygon === polygonOps.polygon_id ? '2px solid #007bff' : '1px solid #d1d5db',
-                    borderRadius: 8,
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-                    margin: 0,
-                    padding: '12px',
-                    boxSizing: 'border-box',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'flex-start'
-                  }}
                   onClick={() => setSelectedPolygon(polygonOps.polygon_id)}
                 >
                   <div className="polygon-header">
@@ -710,7 +779,7 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
                               className="status-badge"
                               style={{ backgroundColor: getStatusColor(operation.status) }}
                             >
-                              {operation.status}
+                              {getStatusDisplayText(operation.status)}
                             </span>
                           </div>
                           {/* Assignment UI */}
@@ -777,10 +846,10 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
                               className="status-select"
                               disabled={isCompleted}
                             >
-                              <option value="unassigned">Por atribuir</option>
+                              <option value="nao_iniciado">Não iniciado</option>
                               <option value="assigned">Atribuído</option>
-                              <option value="ongoing">Em execução</option>
-                              <option value="completed">Executado</option>
+                              <option value="em_execucao">Em execução</option>
+                              <option value="executado">Executado</option>
                             </select>
                           )}
                           <div className="operation-dates">
@@ -822,21 +891,6 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
                                 <small>{operation.observations}</small>
                               </div>
                             )
-                          )}
-                          {/* Show activities for testing */}
-                          {operation.activities && operation.activities.length > 0 && (
-                            <div className="operation-activities" style={{ marginTop: 8 }}>
-                              <strong>Activities:</strong>
-                              <ul>
-                                {operation.activities.map(act => (
-                                  <li key={act.activity_id}>
-                                    {act.type} - {act.status} by {act.started_by} at {act.started_at}
-                                    {act.finished_at && `, finished at ${act.finished_at}`}
-                                    {act.observations && <span> | Obs: {act.observations}</span>}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
                           )}
                         </div>
                       );
@@ -916,14 +970,6 @@ export async function CreateExecutionSheet(id, setExecutionSheetData, setError, 
       const data = await res.json();
       if (data && data.id) newId = data.id;
     } catch { }
-    // Optionally fetch the execution sheet (not required if page will fetch on navigation)
-    if (setExecutionSheetData) {
-      const response = await fetch(`/rest/getExecution/${newId}`);
-      if (!response.ok) throw new Error('Failed to fetch execution sheet');
-      const sheet = await response.json();
-      console.log('Fetched execution sheet:', sheet);
-      setExecutionSheetData(sheet);
-    }
     // Navigate to the execution sheet page
     if (navigate) {
       navigate(`/executionsheet/${newId}`);

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { topBar } from '../TopBar';
 import { addInfoRequest } from './api';
+import CheckRequests from '../CheckRequests';
 import './ExecutionSheet.css';
 
 export default function ExecutionSheetAddInfo() {
@@ -34,8 +35,10 @@ export default function ExecutionSheetAddInfo() {
     setError(null);
     try {
       const res = await fetch(`/rest/execution/getConcludedActivities/${id}/${operatorName}`);
+      CheckRequests(res, navigate);
       if (!res.ok) throw new Error('Failed to fetch activities.');
       const acts = await res.json();
+      console.log('Fetched activities:', acts);
       setActivities(acts);
     } catch (e) {
       setError('Failed to fetch activities.');
@@ -45,16 +48,16 @@ export default function ExecutionSheetAddInfo() {
   };
 
   if (loading) {
-      return (
-        <>
-          {topBar(navigate)}
-          <div className="loading-container">
-            <div className="loading-spinner"></div>
-            <p>Loading activities...</p>
-          </div>
-        </>
-      );
-    }
+    return (
+      <>
+        {topBar(navigate)}
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Loading activities...</p>
+        </div>
+      </>
+    );
+  }
 
   const handleMediaChange = (e) => {
     const { name, value, files } = e.target;
@@ -114,13 +117,13 @@ export default function ExecutionSheetAddInfo() {
           <div className="execution-sheet-edit-form execution-sheet-addinfo-list">
             <h3 className="execution-sheet-edit-modal-title">Concluded Activities</h3>
             <ul style={{ width: '100%', padding: 0 }}>
-              {activities.map(act => (
-                <li key={act.activity_id} style={{ listStyle: 'none', marginBottom: 18, background: '#f8f9fa', borderRadius: 8, padding: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+              {activities.map((act, idx) => (
+                <li key={act.activity_id || idx} style={{ listStyle: 'none', marginBottom: 18, background: '#f8f9fa', borderRadius: 8, padding: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
                   <div><strong>Activity:</strong> {act.type}</div>
                   <div><strong>Status:</strong> {act.status}</div>
-                  <div><strong>Started By:</strong> {act.started_by}</div>
-                  <div><strong>Started At:</strong> {act.started_at}</div>
-                  <div><strong>Finished At:</strong> {act.finished_at}</div>
+                  <div><strong>Started By:</strong> {act.operator_username}</div>
+                  <div><strong>Started At:</strong> {act.start_time ? new Date(act.start_time).toLocaleString() : act.started_at ? new Date(act.started_at).toLocaleString() : ''}</div>
+                  <div><strong>Finished At:</strong> {act.end_time ? new Date(act.end_time).toLocaleString() : act.finished_at ? new Date(act.finished_at).toLocaleString() : ''}</div>
                   <div><strong>Observations:</strong> {act.observations}</div>
                   <button className="btn btn-success execution-sheet-edit-btn" style={{ marginTop: 10 }} onClick={() => setSelectedActivity(act)}>
                     Add Media/Info
