@@ -76,8 +76,8 @@ public class LoginResource {
                         .entity("{\"message\":\"Role inválido.\"}")
                         .build();
             }
-            
-            String foto = user.contains("user_photo") ? user.getString("user_photo") : null;
+
+            String foto = user.contains("user_photo_url") ? user.getString("user_photo_url") : null;
             String email = user.getString("user_email");
 
             // Prepara claims JWT

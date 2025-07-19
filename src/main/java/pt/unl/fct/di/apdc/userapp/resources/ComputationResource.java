@@ -6,6 +6,8 @@ import java.util.Set;
 import java.util.logging.Logger;
 
 import org.apache.commons.codec.digest.DigestUtils;
+import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
+import org.glassfish.jersey.media.multipart.FormDataParam;
 
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.google.appengine.repackaged.com.google.gson.JsonObject;
@@ -45,33 +47,34 @@ import pt.unl.fct.di.apdc.userapp.util.RemoveAccount;
 import pt.unl.fct.di.apdc.userapp.util.RolePermissions;
 import pt.unl.fct.di.apdc.userapp.util.Roles;
 
-
-
 @Path("/utils")
-@Produces(MediaType.APPLICATION_JSON + ";charset=utf-8") 
+@Produces(MediaType.APPLICATION_JSON + ";charset=utf-8")
 public class ComputationResource {
 
-	private static final Logger LOG = Logger.getLogger(ComputationResource.class.getName()); 
-	private final Gson g = new Gson();
-	public ComputationResource() {} //nothing to be done here @GET
-	private static final Datastore datastore = DatastoreOptions.getDefaultInstance().getService();
+    private static final Logger LOG = Logger.getLogger(ComputationResource.class.getName());
+    private final Gson g = new Gson();
+
+    public ComputationResource() {
+    } // nothing to be done here @GET
+
+    private static final Datastore datastore = DatastoreOptions.getDefaultInstance().getService();
 
     private String extractJWT(Cookie cookie, String authHeader) {
         if (cookie != null && cookie.getValue() != null)
             return cookie.getValue();
-    
+
         if (authHeader != null && authHeader.startsWith("Bearer "))
             return authHeader.substring("Bearer ".length());
-    
+
         return null;
     }
-    
+
     @GET
     @Path("/user/{username}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response viewUser(@PathParam("username") String targetUsername,
-                            @CookieParam("session::apdc") Cookie cookie,
-                            @HeaderParam("Authorization") String authHeader) {
+            @CookieParam("session::apdc") Cookie cookie,
+            @HeaderParam("Authorization") String authHeader) {
 
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token)) {
@@ -116,7 +119,7 @@ public class ComputationResource {
 
         if (Roles.is(requesterRole, Roles.RU, Roles.VU)) {
             if (!"ATIVADO".equalsIgnoreCase(targetState) ||
-                !"PUBLICO".equalsIgnoreCase(targetProfile)) {
+                    !"PUBLICO".equalsIgnoreCase(targetProfile)) {
                 return Response.status(Response.Status.FORBIDDEN)
                         .entity("{\"message\":\"You do not have permission to view this user.\"}").build();
             }
@@ -125,12 +128,12 @@ public class ComputationResource {
         Map<String, Object> filteredData = entityToMap(user, requesterRole);
         return Response.ok(g.toJson(filteredData)).build();
     }
-    
+
     @GET
     @Path("/list")
     @Produces(MediaType.APPLICATION_JSON)
     public Response listUsers(@CookieParam("session::apdc") Cookie cookie,
-                            @HeaderParam("Authorization") String authHeader) {
+            @HeaderParam("Authorization") String authHeader) {
 
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token)) {
@@ -159,7 +162,6 @@ public class ComputationResource {
                     .entity("{\"message\":\"Role not authorized to list users.\"}")
                     .build();
         }
-
 
         Query<Entity> query = Query.newEntityQueryBuilder().setKind("User").build();
         QueryResults<Entity> results = datastore.run(query);
@@ -195,32 +197,31 @@ public class ComputationResource {
 
         for (String name : entity.getNames()) {
             // Nunca expor password
-            if (name.equals("password")) continue;
-        
+            if (name.equals("password"))
+                continue;
+
             // Se for RU ou VU, limitar os campos visíveis
             if (Roles.is(requesterRole, Roles.RU, Roles.VU)) {
                 if (!name.equals("user_email") && !name.equals("user_name")) {
                     continue;
                 }
             }
-        
+
             Value<?> value = entity.getValue(name);
             Object fieldValue = (value != null) ? value.get() : "NOT DEFINED";
             map.put(name, fieldValue);
         }
-        
 
         return map;
     }
 
-
-	@POST
+    @POST
     @Path("/changerole")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response changeRole(ChangeRole request,
-                            @CookieParam("session::apdc") Cookie cookie,
-                            @HeaderParam("Authorization") String authHeader) {
+            @CookieParam("session::apdc") Cookie cookie,
+            @HeaderParam("Authorization") String authHeader) {
 
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token)) {
@@ -271,7 +272,7 @@ public class ComputationResource {
         String currentTargetRole = targetUser.getString("user_role");
 
         if (!RolePermissions.hasHigherPriority(requesterRole, currentTargetRole) ||
-            !RolePermissions.hasHigherPriority(requesterRole, newRole)) {
+                !RolePermissions.hasHigherPriority(requesterRole, newRole)) {
             return Response.status(Status.FORBIDDEN)
                     .entity("{\"message\":\"Cannot change role of equal or higher privileged users.\"}")
                     .build();
@@ -294,14 +295,13 @@ public class ComputationResource {
         return Response.ok("{\"message\":\"Role updated successfully.\"}").build();
     }
 
-
-	@POST
+    @POST
     @Path("/changestate")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response changeAccountState(ChangeState request,
-                                    @CookieParam("session::apdc") Cookie cookie,
-                                    @HeaderParam("Authorization") String authHeader) {
+            @CookieParam("session::apdc") Cookie cookie,
+            @HeaderParam("Authorization") String authHeader) {
 
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token)) {
@@ -337,7 +337,7 @@ public class ComputationResource {
         }
 
         if (!newState.equals("ATIVADO") && !newState.equals("INATIVO") &&
-            !newState.equals("SUSPENSO") && !newState.equals("P-REMOVER")) {
+                !newState.equals("SUSPENSO") && !newState.equals("P-REMOVER")) {
             return Response.status(Status.BAD_REQUEST)
                     .entity("{\"message\":\"Invalid state.\"}").build();
         }
@@ -360,9 +360,9 @@ public class ComputationResource {
 
         if (newState.equals("ATIVADO")) {
             String[] requiredFields = {
-                "user_email", "user_name", "user_pwd", "user_phone1", "user_nif", "user_cc",
-                "user_cc_issue_date", "user_cc_issue_place", "user_cc_validity", "user_birth_date",
-                "user_nationality", "user_residence_country", "user_address", "user_postal_code"
+                    "user_email", "user_name", "user_pwd", "user_phone1", "user_nif", "user_cc",
+                    "user_cc_issue_date", "user_cc_issue_place", "user_cc_validity", "user_birth_date",
+                    "user_nationality", "user_residence_country", "user_address", "user_postal_code"
             };
 
             for (String field : requiredFields) {
@@ -380,14 +380,13 @@ public class ComputationResource {
         return Response.ok("{\"message\":\"State changed successfully.\"}").build();
     }
 
-
-	@POST
+    @POST
     @Path("/removeaccount")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response removeAccount(RemoveAccount request,
-                                @CookieParam("session::apdc") Cookie cookie,
-                                @HeaderParam("Authorization") String authHeader) {
+            @CookieParam("session::apdc") Cookie cookie,
+            @HeaderParam("Authorization") String authHeader) {
 
         if (request == null || request.targetUsername == null) {
             return Response.status(Response.Status.BAD_REQUEST)
@@ -446,14 +445,22 @@ public class ComputationResource {
         return Response.ok("{\"message\":\"User " + userTarget + " successfully removed.\"}").build();
     }
 
-
-	@POST
+    @POST
     @Path("/changeattributes")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
     @Produces(MediaType.APPLICATION_JSON)
-    @Consumes(MediaType.APPLICATION_JSON)
-    public Response changeAttributes(ChangeAttributes request,
-                                    @CookieParam("session::apdc") Cookie cookie,
-                                    @HeaderParam("Authorization") String authHeader) {
+    public Response changeAttributes(
+            @FormDataParam("data") String jsonData,
+            @FormDataParam("profile_picture") java.io.InputStream profilePictureStream,
+            @FormDataParam("profile_picture") FormDataContentDisposition fileDetail,
+            @CookieParam("session::apdc") Cookie cookie,
+            @HeaderParam("Authorization") String authHeader) {
+        ChangeAttributes request;
+        try {
+            request = g.fromJson(jsonData, ChangeAttributes.class);
+        } catch (Exception e) {
+            return Response.status(Status.BAD_REQUEST).entity("Invalid JSON data: " + e.getMessage()).build();
+        }
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token)) {
             return Response.status(Response.Status.UNAUTHORIZED)
@@ -513,8 +520,41 @@ public class ComputationResource {
             for (String attr : newAttributes.keySet()) {
                 if (Set.of("name", "email", "role", "account_state").contains(attr)) {
                     return Response.status(Response.Status.FORBIDDEN)
-                            .entity("{\"message\":\"SGVBO cannot modify name, email, role or account state.\"}").build();
+                            .entity("{\"message\":\"SGVBO cannot modify name, email, role or account state.\"}")
+                            .build();
                 }
+            }
+        }
+
+        String photoUrl = null;
+        String previousPhotoUrl = targetUser.contains("user_photo_url") ? targetUser.getString("user_photo_url") : null;
+        boolean uploadedNewPhoto = false;
+        if (profilePictureStream != null && fileDetail != null) {
+            try {
+                String bucketName = "alien-iterator-460014-a0.appspot.com";
+                String fileName = "profile_pictures/" + userTarget + "_" + java.util.UUID.randomUUID() + "_"
+                        + fileDetail.getFileName();
+                com.google.cloud.storage.Storage storage = com.google.cloud.storage.StorageOptions.getDefaultInstance()
+                        .getService();
+                com.google.cloud.storage.BlobInfo blobInfo = com.google.cloud.storage.BlobInfo
+                        .newBuilder(bucketName, fileName)
+                        .setContentType(fileDetail.getType())
+                        .setAcl(java.util.Arrays.asList(
+                                com.google.cloud.storage.Acl.of(com.google.cloud.storage.Acl.User.ofAllUsers(),
+                                        com.google.cloud.storage.Acl.Role.READER)))
+                        .build();
+                try (java.nio.channels.WritableByteChannel channel = storage.writer(blobInfo)) {
+                    byte[] buffer = new byte[8192];
+                    int bytesRead;
+                    while ((bytesRead = profilePictureStream.read(buffer)) != -1) {
+                        channel.write(java.nio.ByteBuffer.wrap(buffer, 0, bytesRead));
+                    }
+                }
+                photoUrl = String.format("https://storage.googleapis.com/%s/%s", bucketName, fileName);
+                uploadedNewPhoto = true;
+            } catch (Exception e) {
+                LOG.warning("Failed to upload profile picture: " + e.getMessage());
+                photoUrl = previousPhotoUrl;
             }
         }
 
@@ -524,91 +564,109 @@ public class ComputationResource {
             for (Map.Entry<String, String> entry : newAttributes.entrySet()) {
                 builder.set("user_" + entry.getKey(), entry.getValue());
             }
-            datastore.put(builder.build());
+            if (photoUrl != null && !photoUrl.isEmpty()) {
+                builder.set("user_photo_url", photoUrl);
+            }
+            txn.put(builder.build());
             txn.commit();
             LOG.info("Attributes for " + userTarget + " updated by " + username);
+
+            // Delete previous image if new one was uploaded and previous exists
+            if (uploadedNewPhoto && previousPhotoUrl != null && !previousPhotoUrl.isEmpty()) {
+                try {
+                    String prevPath = previousPhotoUrl
+                            .replace("https://storage.googleapis.com/alien-iterator-460014-a0.appspot.com/", "");
+                    com.google.cloud.storage.Storage storage = com.google.cloud.storage.StorageOptions
+                            .getDefaultInstance().getService();
+                    boolean deleted = storage.delete("alien-iterator-460014-a0.appspot.com", prevPath);
+                    if (!deleted) {
+                        LOG.warning("Failed to delete previous profile picture: " + previousPhotoUrl);
+                    }
+                } catch (Exception e) {
+                    LOG.warning("Error deleting previous profile picture: " + e.getMessage());
+                }
+            }
+
             return Response.ok("{\"message\":\"Attributes updated successfully.\"}").build();
         } catch (Exception e) {
             txn.rollback();
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity("{\"message\":\"Error updating attributes: " + e.getMessage() + "\"}").build();
         } finally {
-            if (txn.isActive()) txn.rollback();
+            if (txn.isActive())
+                txn.rollback();
         }
     }
 
+    @POST
+    @Path("/changepassword")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response changePassword(ChangePassword request,
+            @CookieParam("session::apdc") Cookie cookie,
+            @HeaderParam("Authorization") String authHeader) {
+        String token = extractJWT(cookie, authHeader);
+        if (token == null || !JWTToken.validateJWT(token)) {
+            return Response.status(Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Invalid or expired session.\"}").build();
+        }
 
-@POST
-@Path("/changepassword")
-@Consumes(MediaType.APPLICATION_JSON)
-@Produces(MediaType.APPLICATION_JSON)
-public Response changePassword(ChangePassword request,
-                               @CookieParam("session::apdc") Cookie cookie,
-                               @HeaderParam("Authorization") String authHeader) {
-    String token = extractJWT(cookie, authHeader);
-    if (token == null || !JWTToken.validateJWT(token)) {
-        return Response.status(Status.UNAUTHORIZED)
-                .entity("{\"message\":\"Invalid or expired session.\"}").build();
+        DecodedJWT jwt = JWTToken.extractJWT(token);
+        String username = jwt.getSubject();
+        String role = jwt.getClaim("role").asString();
+
+        String password = request.currentPassword;
+        String newPassword = request.newPassword;
+        String confirmPassword = request.confirmPassword;
+
+        LOG.fine("Attempt to change password for user: " + username);
+
+        Key logoutKey = datastore.newKeyFactory()
+                .addAncestor(PathElement.of("User", username))
+                .setKind("RevokedToken")
+                .newKey(token);
+        if (datastore.get(logoutKey) != null) {
+            return Response.status(Status.BAD_REQUEST)
+                    .entity("{\"message\":\"Token revoked.\"}").build();
+        }
+
+        if (!RolePermissions.canPerform(role, "CHANGE_PASSWORD")) {
+            return Response.status(Status.FORBIDDEN)
+                    .entity("{\"message\":\"Role not authorized to change password.\"}").build();
+        }
+
+        if (!newPassword.equals(confirmPassword)) {
+            return Response.status(Status.BAD_REQUEST)
+                    .entity("{\"message\":\"New password and confirmation do not match.\"}").build();
+        }
+
+        Key userKey = datastore.newKeyFactory().setKind("User").newKey(username);
+        Entity user = datastore.get(userKey);
+        if (user == null) {
+            return Response.status(Status.NOT_FOUND)
+                    .entity("{\"message\":\"User not found.\"}").build();
+        }
+
+        String currentHashed = DigestUtils.sha512Hex(password);
+        if (!user.getString("user_pwd").equals(currentHashed)) {
+            return Response.status(Status.FORBIDDEN)
+                    .entity("{\"message\":\"Current password is incorrect.\"}").build();
+        }
+
+        Entity updatedUser = Entity.newBuilder(user)
+                .set("user_pwd", DigestUtils.sha512Hex(newPassword))
+                .build();
+        datastore.put(updatedUser);
+
+        return Response.ok("{\"message\":\"Password changed successfully.\"}").build();
     }
 
-    DecodedJWT jwt = JWTToken.extractJWT(token);
-    String username = jwt.getSubject();
-    String role = jwt.getClaim("role").asString();
-
-    String password = request.currentPassword;
-    String newPassword = request.newPassword;
-    String confirmPassword = request.confirmPassword;
-
-    LOG.fine("Attempt to change password for user: " + username);
-
-    Key logoutKey = datastore.newKeyFactory()
-            .addAncestor(PathElement.of("User", username))
-            .setKind("RevokedToken")
-            .newKey(token);
-    if (datastore.get(logoutKey) != null) {
-        return Response.status(Status.BAD_REQUEST)
-                .entity("{\"message\":\"Token revoked.\"}").build();
-    }
-
-    if (!RolePermissions.canPerform(role, "CHANGE_PASSWORD")) {
-        return Response.status(Status.FORBIDDEN)
-                .entity("{\"message\":\"Role not authorized to change password.\"}").build();
-    }
-
-    if (!newPassword.equals(confirmPassword)) {
-        return Response.status(Status.BAD_REQUEST)
-                .entity("{\"message\":\"New password and confirmation do not match.\"}").build();
-    }
-
-    Key userKey = datastore.newKeyFactory().setKind("User").newKey(username);
-    Entity user = datastore.get(userKey);
-    if (user == null) {
-        return Response.status(Status.NOT_FOUND)
-                .entity("{\"message\":\"User not found.\"}").build();
-    }
-
-    String currentHashed = DigestUtils.sha512Hex(password);
-    if (!user.getString("user_pwd").equals(currentHashed)) {
-        return Response.status(Status.FORBIDDEN)
-                .entity("{\"message\":\"Current password is incorrect.\"}").build();
-    }
-
-    Entity updatedUser = Entity.newBuilder(user)
-            .set("user_pwd", DigestUtils.sha512Hex(newPassword))
-            .build();
-    datastore.put(updatedUser);
-
-    return Response.ok("{\"message\":\"Password changed successfully.\"}").build();
-}
-
-    
     @POST
     @Path("/deleteaccount")
     @Produces(MediaType.APPLICATION_JSON)
-    @Consumes(MediaType.APPLICATION_JSON)
     public Response deleteAccountRequest(RemoveAccount request,
-                                        @CookieParam("session::apdc") Cookie cookie,
-                                        @HeaderParam("Authorization") String authHeader) {
+            @CookieParam("session::apdc") Cookie cookie,
+            @HeaderParam("Authorization") String authHeader) {
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token)) {
             return Response.status(Status.UNAUTHORIZED)
@@ -656,21 +714,20 @@ public Response changePassword(ChangePassword request,
             return Response.status(Status.BAD_REQUEST)
                     .entity("{\"message\":\"Account deletion already requested.\"}").build();
         }
-        
+
         Entity updated = Entity.newBuilder(user).set("user_account_state", newState).build();
         datastore.put(updated);
 
         return Response.ok("{\"message\":\"Account deletion requested successfully.\"}").build();
     }
 
-
     @POST
     @Path("/forceLogout")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response forceLogout(ForceLogout request,
-                                @CookieParam("session::apdc") Cookie cookie,
-                                @HeaderParam("Authorization") String authHeader) {
+            @CookieParam("session::apdc") Cookie cookie,
+            @HeaderParam("Authorization") String authHeader) {
 
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token)) {
@@ -728,80 +785,81 @@ public Response changePassword(ChangePassword request,
         return Response.ok(response.toString()).build();
     }
 
+    @POST
+    @Path("/visibility")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response changeVisibility(ChangeVisibility request,
+            @CookieParam("session::apdc") Cookie cookie,
+            @HeaderParam("Authorization") String authHeader) {
 
-        @POST
-        @Path("/visibility")
-        @Consumes(MediaType.APPLICATION_JSON)
-        @Produces(MediaType.APPLICATION_JSON)
-        public Response changeVisibility(ChangeVisibility request,
-                                        @CookieParam("session::apdc") Cookie cookie,
-                                        @HeaderParam("Authorization") String authHeader) {
-
-            String token = extractJWT(cookie, authHeader);
-            if (token == null || !JWTToken.validateJWT(token)) {
-                return Response.status(Response.Status.UNAUTHORIZED)
-                        .entity("{\"message\":\"Invalid or expired session.\"}").build();
-            }
-
-            DecodedJWT jwt = JWTToken.extractJWT(token);
-            String username = jwt.getSubject();
-            String requesterRole = jwt.getClaim("role").asString();
-
-            if (!request.valid()) {
-                return Response.status(Response.Status.BAD_REQUEST)
-                        .entity("{\"message\":\"Invalid visibility value.\"}").build();
-            }
-
-            String targetUser = request.targetUsername;
-            String newVisibility = request.newVisibility.toUpperCase();
-            Entity user;
-            String effectiveTarget;
-
-            if (targetUser == null || targetUser.isBlank()) {
-                Key userKey = datastore.newKeyFactory().setKind("User").newKey(username);
-                user = datastore.get(userKey);
-                effectiveTarget = username;
-
-                if (user == null) {
-                    return Response.status(Response.Status.NOT_FOUND)
-                            .entity("{\"message\":\"User not found.\"}").build();
-                }
-            } else {
-                if (!RolePermissions.canPerform(requesterRole, "MODIFY_VISIBILITY")) {
-                    return Response.status(Status.FORBIDDEN)
-                            .entity("{\"message\":\"Role " + requesterRole + " is not authorized to modify other users' visibility.\"}")
-                            .build();
-                }
-
-                Key userKey = datastore.newKeyFactory().setKind("User").newKey(targetUser);
-                user = datastore.get(userKey);
-                effectiveTarget = targetUser;
-
-                if (user == null) {
-                    return Response.status(Response.Status.NOT_FOUND)
-                            .entity("{\"message\":\"Target user not found.\"}").build();
-                }
-            }
-
-            Entity updatedUser = Entity.newBuilder(user)
-                    .set("user_visibility", newVisibility)
-                    .build();
-            datastore.put(updatedUser);
-
-            LOG.info("Visibility changed for user: " + effectiveTarget + " to " + newVisibility);
-
-            JsonObject response = new JsonObject();
-            response.addProperty("message", "Account visibility for " + effectiveTarget + " updated to " + newVisibility + ".");
-            return Response.ok(response.toString()).build();
+        String token = extractJWT(cookie, authHeader);
+        if (token == null || !JWTToken.validateJWT(token)) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Invalid or expired session.\"}").build();
         }
+
+        DecodedJWT jwt = JWTToken.extractJWT(token);
+        String username = jwt.getSubject();
+        String requesterRole = jwt.getClaim("role").asString();
+
+        if (!request.valid()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("{\"message\":\"Invalid visibility value.\"}").build();
+        }
+
+        String targetUser = request.targetUsername;
+        String newVisibility = request.newVisibility.toUpperCase();
+        Entity user;
+        String effectiveTarget;
+
+        if (targetUser == null || targetUser.isBlank()) {
+            Key userKey = datastore.newKeyFactory().setKind("User").newKey(username);
+            user = datastore.get(userKey);
+            effectiveTarget = username;
+
+            if (user == null) {
+                return Response.status(Response.Status.NOT_FOUND)
+                        .entity("{\"message\":\"User not found.\"}").build();
+            }
+        } else {
+            if (!RolePermissions.canPerform(requesterRole, "MODIFY_VISIBILITY")) {
+                return Response.status(Status.FORBIDDEN)
+                        .entity("{\"message\":\"Role " + requesterRole
+                                + " is not authorized to modify other users' visibility.\"}")
+                        .build();
+            }
+
+            Key userKey = datastore.newKeyFactory().setKind("User").newKey(targetUser);
+            user = datastore.get(userKey);
+            effectiveTarget = targetUser;
+
+            if (user == null) {
+                return Response.status(Response.Status.NOT_FOUND)
+                        .entity("{\"message\":\"Target user not found.\"}").build();
+            }
+        }
+
+        Entity updatedUser = Entity.newBuilder(user)
+                .set("user_visibility", newVisibility)
+                .build();
+        datastore.put(updatedUser);
+
+        LOG.info("Visibility changed for user: " + effectiveTarget + " to " + newVisibility);
+
+        JsonObject response = new JsonObject();
+        response.addProperty("message",
+                "Account visibility for " + effectiveTarget + " updated to " + newVisibility + ".");
+        return Response.ok(response.toString()).build();
+    }
 
     @POST
     @Path("/block")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response blockAccount(BlockAccountRequest request,
-                                @CookieParam("session::apdc") Cookie cookie,
-                                @HeaderParam("Authorization") String authHeader) {
+            @CookieParam("session::apdc") Cookie cookie,
+            @HeaderParam("Authorization") String authHeader) {
 
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token)) {
@@ -850,6 +908,5 @@ public Response changePassword(ChangePassword request,
         response.addProperty("message", "User " + request.targetUsername + " was blocked successfully.");
         return Response.ok(response.toString()).build();
     }
-
 
 }

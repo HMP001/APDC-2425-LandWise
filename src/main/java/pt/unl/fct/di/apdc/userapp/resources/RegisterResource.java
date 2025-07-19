@@ -56,30 +56,6 @@ public class RegisterResource {
             return Response.status(Status.BAD_REQUEST).entity("Dados obrigatórios em falta ou role inválido.").build();
         }
 
-        String photoUrl = "";
-        if (profilePictureStream != null && fileDetail != null) {
-            try {
-                String bucketName = "alien-iterator-460014-a0.appspot.com";
-                String fileName = "profile_pictures/" + data.username + "_" + UUID.randomUUID() + "_"
-                        + fileDetail.getFileName();
-                Storage storage = StorageOptions.getDefaultInstance().getService();
-                BlobInfo blobInfo = BlobInfo.newBuilder(bucketName, fileName)
-                        .setContentType(fileDetail.getType())
-                        .build();
-                try (java.nio.channels.WritableByteChannel channel = storage.writer(blobInfo)) {
-                    byte[] buffer = new byte[8192];
-                    int bytesRead;
-                    while ((bytesRead = profilePictureStream.read(buffer)) != -1) {
-                        channel.write(java.nio.ByteBuffer.wrap(buffer, 0, bytesRead));
-                    }
-                }
-                photoUrl = String.format("https://storage.googleapis.com/%s/%s", bucketName, fileName);
-            } catch (Exception e) {
-                LOG.log(Level.WARNING, "Failed to upload profile picture: {0}", e.getMessage());
-                photoUrl = "";
-            }
-        }
-
         Transaction txn = datastore.newTransaction();
         try {
             Key userKey = datastore.newKeyFactory().setKind("User").newKey(data.username);
@@ -88,6 +64,37 @@ public class RegisterResource {
             if (user != null) {
                 txn.rollback();
                 return Response.status(Status.CONFLICT).entity("Utilizador já existe.").build();
+            }
+
+            String photoUrl;
+            if (profilePictureStream != null && fileDetail != null) {
+                try {
+                    String bucketName = "alien-iterator-460014-a0.appspot.com";
+                    String fileName = "profile_pictures/" + data.username + "_" + UUID.randomUUID() + "_"
+                            + fileDetail.getFileName();
+                    Storage storage = StorageOptions.getDefaultInstance().getService();
+                    BlobInfo blobInfo = BlobInfo.newBuilder(bucketName, fileName)
+                            .setContentType(fileDetail.getType())
+                            .setAcl(java.util.Arrays.asList(
+                                    com.google.cloud.storage.Acl.of(com.google.cloud.storage.Acl.User.ofAllUsers(),
+                                            com.google.cloud.storage.Acl.Role.READER)))
+                            .build();
+                    try (java.nio.channels.WritableByteChannel channel = storage.writer(blobInfo)) {
+                        byte[] buffer = new byte[8192];
+                        int bytesRead;
+                        while ((bytesRead = profilePictureStream.read(buffer)) != -1) {
+                            channel.write(java.nio.ByteBuffer.wrap(buffer, 0, bytesRead));
+                        }
+                    }
+                    photoUrl = String.format("https://storage.googleapis.com/%s/%s", bucketName, fileName);
+                } catch (Exception e) {
+                    LOG.log(Level.WARNING, "Failed to upload profile picture: {0}", e.getMessage());
+                    photoUrl = "";
+                }
+            } else {
+                LOG.log(Level.WARNING, "No profile picture provided for user: {0}", data.username);
+                photoUrl = (data.photo_url != null && !data.photo_url.isEmpty()) ? data.photo_url
+                        : "https://storage.googleapis.com/alien-iterator-460014-a0.appspot.com/profile_pictures/default_profile_picture.png";
             }
 
             Entity.Builder userBuilder = Entity.newBuilder(userKey)
