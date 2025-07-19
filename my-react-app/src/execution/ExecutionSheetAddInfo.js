@@ -69,16 +69,17 @@ export default function ExecutionSheetAddInfo() {
     setError(null);
     setSuccess(false);
     try {
-      // Send all info as multipart to addInfo endpoint
+      // Backend expects 'data' as JSON string and 'photos' as file(s)
       const formData = new FormData();
-      formData.append('execution_id', id);
-      formData.append('activity_id', selectedActivity.activity_id);
-      formData.append('observations', mediaFields.observations);
+      const dataObj = {
+        execution_id: id,
+        activity_id: selectedActivity.activity_id,
+        observations: mediaFields.observations,
+        tracks: mediaFields.gps ? [mediaFields.gps] : undefined
+      };
+      formData.append('data', JSON.stringify(dataObj));
       if (mediaFields.photo) {
-        formData.append('photo', mediaFields.photo);
-      }
-      if (mediaFields.gps) {
-        formData.append('tracks', mediaFields.gps);
+        formData.append('photos', mediaFields.photo);
       }
       await addInfoRequest(formData);
       setSuccess(true);
@@ -119,7 +120,7 @@ export default function ExecutionSheetAddInfo() {
             <ul style={{ width: '100%', padding: 0 }}>
               {activities.map((act, idx) => (
                 <li key={act.activity_id || idx} style={{ listStyle: 'none', marginBottom: 18, background: '#f8f9fa', borderRadius: 8, padding: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-                  <div><strong>Activity:</strong> {act.type}</div>
+                  <div><strong>Activity:</strong> {act.activity_id}</div>
                   <div><strong>Status:</strong> {act.status}</div>
                   <div><strong>Started By:</strong> {act.operator_username}</div>
                   <div><strong>Started At:</strong> {act.start_time ? new Date(act.start_time).toLocaleString() : act.started_at ? new Date(act.started_at).toLocaleString() : ''}</div>
