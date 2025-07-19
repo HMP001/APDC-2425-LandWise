@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.logging.Logger;
-import java.util.stream.Collectors;
 
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 import org.glassfish.jersey.media.multipart.FormDataParam;
@@ -32,7 +31,6 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.google.protobuf.ListValue;
 
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.CookieParam;
@@ -600,28 +598,73 @@ public class WorkSheetResource {
 
     @DELETE
     @Path("/delete/{id}")
-    public Response deleteWorksheet(@PathParam("id") String id, @CookieParam("session::apdc") Cookie cookie, @HeaderParam("Authorization") String authHeader) {
-    	String token = extractJWT(cookie, authHeader);
-    	if (token == null || !JWTToken.validateJWT(token)) {
+    public Response deleteWorksheet(@PathParam("id") String id,
+                                    @CookieParam("session::apdc") Cookie cookie,
+                                    @HeaderParam("Authorization") String authHeader) {
+
+        String token = extractJWT(cookie, authHeader);
+        if (token == null || !JWTToken.validateJWT(token)) {
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity("{\"message\":\"Invalid or expired session.\"}").build();
         }
-    	
-    	DecodedJWT jwt = JWTToken.extractJWT(token);
-    	if (jwt == null) {
-           return Response.status(Response.Status.UNAUTHORIZED)
-                   .entity("{\"message\":\"Failed to decode token.\"}").build();
-    	}
-    	String requesterRole = jwt.getClaim("role").asString();
+
+        DecodedJWT jwt = JWTToken.extractJWT(token);
+        if (jwt == null) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"message\":\"Failed to decode token.\"}").build();
+        }
+
+        String requesterRole = jwt.getClaim("role").asString();
         if (!Set.of(Roles.SYSADMIN, Roles.SMBO).contains(requesterRole))
             return forbidden("Only SMBO or SYSADMIN can delete worksheets.");
 
-        Key key = datastore.newKeyFactory().setKind("WorkSheet").newKey(id);
-        Entity entity = datastore.get(key);
-        if (entity == null) return Response.status(Response.Status.NOT_FOUND).build();
+        // Apagar Worksheet
+        Key worksheetKey = datastore.newKeyFactory().setKind("WorkSheet").newKey(id);
+        Entity worksheetEntity = datastore.get(worksheetKey);
+        if (worksheetEntity == null)
+            return Response.status(Response.Status.NOT_FOUND).build();
 
-        datastore.delete(key);
-        return Response.ok("{\"message\":\"Worksheet deleted.\"}").build();
+        List<Key> keysToDelete = new ArrayList<>();
+        keysToDelete.add(worksheetKey);
+
+        // Procurar ExecutionSheet com o mesmo id
+        Key execKey = datastore.newKeyFactory().setKind("ExecutionSheet").newKey(id);
+        Entity execEntity = datastore.get(execKey);
+        if (execEntity != null) {
+            keysToDelete.add(execKey);
+
+            // Apagar Exec_Poly-Op
+            Query<Entity> polyOpQuery = Query.newEntityQueryBuilder()
+                    .setKind("Exec_Poly-Op")
+                    .setFilter(StructuredQuery.PropertyFilter.eq("execution_id", id))
+                    .build();
+            QueryResults<Entity> polyOps = datastore.run(polyOpQuery);
+            while (polyOps.hasNext()) {
+                keysToDelete.add(polyOps.next().getKey());
+            }
+
+            // Apagar ExecutionActivity
+            Query<Entity> activityQuery = Query.newEntityQueryBuilder()
+                    .setKind("ExecutionActivity")
+                    .setFilter(StructuredQuery.PropertyFilter.eq("execution_id", id))
+                    .build();
+            QueryResults<Entity> activities = datastore.run(activityQuery);
+            while (activities.hasNext()) {
+                keysToDelete.add(activities.next().getKey());
+            }
+        }
+
+        // Executar eliminação em batch
+        datastore.delete(keysToDelete.toArray(new Key[0]));
+
+        JsonObject result = new JsonObject();
+        result.addProperty("message", "Worksheet and related execution data deleted.");
+        result.addProperty("worksheet_id", id);
+        result.addProperty("deleted_execution_sheet", execEntity != null);
+        result.addProperty("deleted_poly_ops", keysToDelete.stream().filter(k -> k.getKind().equals("Exec_Poly-Op")).count());
+        result.addProperty("deleted_activities", keysToDelete.stream().filter(k -> k.getKind().equals("ExecutionActivity")).count());
+
+        return Response.ok(g.toJson(result)).build();
     }
 
     @GET
