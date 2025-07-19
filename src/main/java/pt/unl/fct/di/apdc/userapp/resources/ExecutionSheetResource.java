@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.logging.Logger;
 
 import com.auth0.jwt.interfaces.DecodedJWT;
@@ -322,47 +323,65 @@ public class ExecutionSheetResource {
         }
 
         String now = LocalDateTime.now().toString();
-        String today = LocalDate.now().toString();
 
-        // Create ExecutionActivity entity
-        Key activityKey = datastore.allocateId(
-                datastore.newKeyFactory().setKind("ExecutionActivity").addAncestor(execSheetAncestor).newKey());
-        Entity.Builder activityBuilder = Entity.newBuilder(activityKey)
+        // Create ExecutionActivity with UUID key
+        String uuid = UUID.randomUUID().toString();
+        Key activityKey = datastore.newKeyFactory()
+                .setKind("ExecutionActivity")
+                .addAncestor(execSheetAncestor)
+                .newKey(uuid);
+
+        Entity activityEntity = Entity.newBuilder(activityKey)
                 .set("execution_id", input.execution_id)
                 .set("polygon_id", input.polygon_id)
                 .set("operation_code", input.operation_code)
                 .set("operator_username", user)
                 .set("start_time", now)
-                .set("status", "em_execucao");
-        Entity activityEntity = activityBuilder.build();
+                .set("status", "em_execucao")
+                .build();
         datastore.put(activityEntity);
 
-        // Update status in Exec_Poly-Op and append activity_id to activities array
-        List<Long> activities = new ArrayList<>();
+        // Update Exec_Poly-Op: add activity UUID to list
+        List<String> activities = new ArrayList<>();
         if (polyOpEntity.contains("activities")) {
-            String activitiesJson = polyOpEntity.getString("activities");
             try {
-                java.lang.reflect.Type longListType = new com.google.gson.reflect.TypeToken<List<Long>>() {
+                java.lang.reflect.Type listType = new com.google.gson.reflect.TypeToken<List<String>>() {
                 }.getType();
-                activities = g.fromJson(activitiesJson, longListType);
+                activities = g.fromJson(polyOpEntity.getString("activities"), listType);
                 if (activities == null)
                     activities = new ArrayList<>();
-            } catch (Exception ignore) {
+            } catch (Exception ex) {
+                LOG.warning("⚠️ Failed to parse existing activities list: " + ex.getMessage());
             }
         }
-        activities.add(activityKey.getId());
-        Entity updatedPolyOp = Entity.newBuilder(polyOpEntity)
+        activities.add(uuid);
+
+        Entity.Builder updatedBuilder = Entity.newBuilder(polyOpEntity)
                 .set("status", "em_execucao")
-                .set("starting_date", today)
-                .set("last_activity_date", today)
-                .set("activities", g.toJson(activities))
-                .build();
-        datastore.put(updatedPolyOp);
+                .set("starting_date", now)
+                .set("last_activity_date", now)
+                .set("activities", g.toJson(activities));
+
+        // Preserve existing fields
+        if (polyOpEntity.contains("operation_code"))
+            updatedBuilder.set("operation_code", polyOpEntity.getString("operation_code"));
+        if (polyOpEntity.contains("polygon_id"))
+            updatedBuilder.set("polygon_id", polyOpEntity.getString("polygon_id"));
+        if (polyOpEntity.contains("execution_id"))
+            updatedBuilder.set("execution_id", polyOpEntity.getString("execution_id"));
+        if (polyOpEntity.contains("operator_username"))
+            updatedBuilder.set("operator_username", polyOpEntity.getString("operator_username"));
+        if (polyOpEntity.contains("operation_id"))
+            updatedBuilder.set("operation_id", polyOpEntity.getLong("operation_id"));
+        if (polyOpEntity.contains("observations"))
+            updatedBuilder.set("observations", polyOpEntity.getString("observations"));
+
+        datastore.put(updatedBuilder.build());
 
         JsonObject response = new JsonObject();
         response.addProperty("message",
                 "✅ Started activity " + input.operation_code + " in polygon " + input.polygon_id);
-        response.addProperty("activity_id", String.valueOf(activityKey.getId()));
+        response.addProperty("activity_id", uuid);
         return Response.ok(g.toJson(response)).build();
     }
 
@@ -387,8 +406,8 @@ public class ExecutionSheetResource {
         if (!Roles.PO.equalsIgnoreCase(role))
             return forbidden("Only PO can stop activities");
 
-        if (input == null || input.execution_id == null || input.polygon_id == null || input.operation_code == null
-                || input.activity_id == null)
+        if (input == null || input.execution_id == null || input.polygon_id == null
+                || input.operation_code == null || input.activity_id == null)
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("{\"error\":\"Missing execution_id, polygon_id, operation_code or activity_id\"}").build();
 
@@ -406,6 +425,7 @@ public class ExecutionSheetResource {
             response.addProperty("error", "Exec_Poly-Op entity not found for " + compositeKey);
             return Response.status(Response.Status.NOT_FOUND).entity(g.toJson(response)).build();
         }
+
         String assignedOperator = polyOpEntity.contains("operator_username")
                 ? polyOpEntity.getString("operator_username")
                 : null;
@@ -415,20 +435,24 @@ public class ExecutionSheetResource {
             return Response.ok(g.toJson(response)).build();
         }
 
-        // Find ExecutionActivity by activity_id
-        Key activityKey = datastore.newKeyFactory().setKind("ExecutionActivity").addAncestor(execSheetAncestor)
-                .newKey(Long.parseLong(input.activity_id));
+        // Find ExecutionActivity by UUID
+        Key activityKey = datastore.newKeyFactory()
+                .setKind("ExecutionActivity")
+                .addAncestor(execSheetAncestor)
+                .newKey(input.activity_id);
         Entity activityEntity = datastore.get(activityKey);
         if (activityEntity == null) {
             JsonObject response = new JsonObject();
             response.addProperty("error", "Activity entity not found for id " + input.activity_id);
             return Response.ok(g.toJson(response)).build();
         }
+
         if (!user.equals(activityEntity.getString("operator_username"))) {
             JsonObject response = new JsonObject();
             response.addProperty("error", "Activity not assigned to you.");
             return Response.ok(g.toJson(response)).build();
         }
+
         if (!"em_execucao".equals(activityEntity.getString("status"))) {
             JsonObject response = new JsonObject();
             response.addProperty("error", "Activity is not running.");
@@ -443,12 +467,28 @@ public class ExecutionSheetResource {
         datastore.put(updatedActivity);
 
         // Update status in Exec_Poly-Op
-        Entity updatedPolyOp = Entity.newBuilder(polyOpEntity)
+        Entity.Builder updatedBuilder = Entity.newBuilder(polyOpEntity)
                 .set("status", "executado")
                 .set("finishing_date", today)
-                .set("last_activity_date", today)
-                .build();
-        datastore.put(updatedPolyOp);
+                .set("last_activity_date", today);
+
+        // Preserve optional fields
+        if (polyOpEntity.contains("activities"))
+            updatedBuilder.set("activities", polyOpEntity.getString("activities"));
+        if (polyOpEntity.contains("operation_code"))
+            updatedBuilder.set("operation_code", polyOpEntity.getString("operation_code"));
+        if (polyOpEntity.contains("polygon_id"))
+            updatedBuilder.set("polygon_id", polyOpEntity.getString("polygon_id"));
+        if (polyOpEntity.contains("execution_id"))
+            updatedBuilder.set("execution_id", polyOpEntity.getString("execution_id"));
+        if (polyOpEntity.contains("operator_username"))
+            updatedBuilder.set("operator_username", polyOpEntity.getString("operator_username"));
+        if (polyOpEntity.contains("operation_id"))
+            updatedBuilder.set("operation_id", polyOpEntity.getLong("operation_id"));
+        if (polyOpEntity.contains("observations"))
+            updatedBuilder.set("observations", polyOpEntity.getString("observations"));
+
+        datastore.put(updatedBuilder.build());
 
         JsonObject response = new JsonObject();
         response.addProperty("message",
@@ -520,15 +560,13 @@ public class ExecutionSheetResource {
     @Path("/getExecution/{executionId}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response getExecution(
-        @CookieParam("session::apdc") Cookie cookie,
-        @HeaderParam("Authorization") String authHeader,
-        @PathParam("executionId") String executionId
-        ) {
-
+            @CookieParam("session::apdc") Cookie cookie,
+            @HeaderParam("Authorization") String authHeader,
+            @PathParam("executionId") String executionId) {
         String token = extractJWT(cookie, authHeader);
-
         if (token == null || !JWTToken.validateJWT(token))
             return unauthorized("Invalid session");
+
         DecodedJWT jwt = JWTToken.extractJWT(token);
         if (jwt == null)
             return unauthorized("Failed to decode token");
@@ -536,107 +574,122 @@ public class ExecutionSheetResource {
         String role = jwt.getClaim("role").asString();
         if (!Set.of(Roles.PRBO, Roles.SDVBO, Roles.SMBO).contains(role))
             return forbidden("Access denied");
+
         if (executionId == null || executionId.isEmpty()) {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("{\"error\":\"Missing executionId\"}").build();
         }
 
-        Key execKey = datastore.newKeyFactory().setKind("ExecutionSheet").newKey(executionId);
-        Entity execEntity = datastore.get(execKey);
-        if (execEntity == null) {
-            return Response.status(Response.Status.NOT_FOUND)
-                    .entity("{\"error\":\"Execution sheet not found\"}").build();
-        }
-
-        JsonObject result = new JsonObject();
-        result.addProperty("execution_id", execEntity.getKey().getName());
-        result.addProperty("worksheet_id", execEntity.getString("worksheet_id"));
-        result.addProperty("created_by", execEntity.getString("created_by"));
-        result.addProperty("created_at", execEntity.getLong("created_at"));
-        result.addProperty("starting_date", execEntity.getString("starting_date"));
-        result.addProperty("finishing_date", execEntity.getString("finishing_date"));
-        result.addProperty("observations", execEntity.getString("observations"));
-
-        String operationsJson = execEntity.contains("operations") ? execEntity.getString("operations") : "[]";
-
-        result.add("operations", JsonParser.parseString(operationsJson));
-
-        Query<Entity> query = Query.newEntityQueryBuilder()
-                .setKind("Exec_Poly-Op")
-                .setFilter(StructuredQuery.PropertyFilter.eq("execution_id", executionId))
-                .build();
-        QueryResults<Entity> results = datastore.run(query);
-        JsonArray polygonOperations = new JsonArray();
-        while (results.hasNext()) {
-            Entity polygonOpEntity = results.next();
-            JsonObject polygonOpJson = new JsonObject();
-            String polygonId = polygonOpEntity.getString("polygon_id");
-            String operationCode = polygonOpEntity.getString("operation_code");
-            polygonOpJson.addProperty("operation_code", operationCode);
-            polygonOpJson.addProperty("polygon_id", polygonId);
-            polygonOpJson.addProperty("status", polygonOpEntity.getString("status"));
-
-            Query<Entity> activityQuery = Query.newEntityQueryBuilder()
-                    .setKind("ExecutionActivity")
-                    .setFilter(StructuredQuery.CompositeFilter.and(
-                            StructuredQuery.PropertyFilter.eq("execution_id", executionId),
-                            StructuredQuery.PropertyFilter.eq("polygon_id", polygonId),
-                            StructuredQuery.PropertyFilter.eq("operation_code", operationCode)))
-                    .build();
-            QueryResults<Entity> activityResults = datastore.run(activityQuery);
-            JsonArray activities = new JsonArray();
-            while (activityResults.hasNext()) {
-                Entity activityEntity = activityResults.next();
-                JsonObject activityJson = new JsonObject();
-                activityJson.addProperty("activity_id", String.valueOf(activityEntity.getKey().getId()));
-                activityJson.addProperty("status", activityEntity.getString("status"));
-                activityJson.addProperty("start_time", activityEntity.getString("start_time"));
-                activityJson.addProperty("end_time", activityEntity.getString("end_time"));
-                activityJson.addProperty("observations", activityEntity.getString("observations"));
-                if (activityEntity.contains("gpx_track")) {
-                    try {
-                        ExecutionSheetData.Track[] tracks = g.fromJson(activityEntity.getString("gpx_track"),
-                                ExecutionSheetData.Track[].class);
-                        activityJson.add("tracks", g.toJsonTree(tracks));
-                    } catch (Exception ignore) {
-                    }
-                }
-                activities.add(activityJson);
+        try {
+            Key execKey = datastore.newKeyFactory().setKind("ExecutionSheet").newKey(executionId);
+            Entity execEntity = datastore.get(execKey);
+            if (execEntity == null) {
+                return Response.status(Response.Status.NOT_FOUND)
+                        .entity("{\"error\":\"Execution sheet not found\"}").build();
             }
-            polygonOpJson.add("activities", activities);
 
-            polygonOperations.add(polygonOpJson);
+            JsonObject result = new JsonObject();
+            result.addProperty("execution_id", execEntity.getKey().getName());
+            result.addProperty("worksheet_id", execEntity.getString("worksheet_id"));
+            result.addProperty("created_by", execEntity.getString("created_by"));
+            result.addProperty("created_at", execEntity.getLong("created_at"));
+            result.addProperty("starting_date", execEntity.getString("starting_date"));
+            result.addProperty("finishing_date", execEntity.getString("finishing_date"));
+            result.addProperty("observations", execEntity.getString("observations"));
+
+            String operationsJson = execEntity.contains("operations") ? execEntity.getString("operations") : "[]";
+            result.add("operations", JsonParser.parseString(operationsJson));
+
+            Query<Entity> query = Query.newEntityQueryBuilder()
+                    .setKind("Exec_Poly-Op")
+                    .setFilter(StructuredQuery.PropertyFilter.eq("execution_id", executionId))
+                    .build();
+            QueryResults<Entity> results = datastore.run(query);
+            JsonArray polygonOperations = new JsonArray();
+
+            while (results.hasNext()) {
+                Entity polygonOpEntity = results.next();
+                JsonObject polygonOpJson = new JsonObject();
+
+                polygonOpJson.addProperty("operation_code", polygonOpEntity.getString("operation_code"));
+                polygonOpJson.addProperty("polygon_id", polygonOpEntity.getString("polygon_id"));
+                polygonOpJson.addProperty("status", polygonOpEntity.getString("status"));
+
+                Query<Entity> activityQuery = Query.newEntityQueryBuilder()
+                        .setKind("ExecutionActivity")
+                        .setFilter(StructuredQuery.CompositeFilter.and(
+                                StructuredQuery.PropertyFilter.eq("execution_id", executionId),
+                                StructuredQuery.PropertyFilter.eq("polygon_id",
+                                        polygonOpEntity.getString("polygon_id")),
+                                StructuredQuery.PropertyFilter.eq("operation_code",
+                                        polygonOpEntity.getString("operation_code"))))
+                        .build();
+                QueryResults<Entity> activityResults = datastore.run(activityQuery);
+
+                JsonArray activities = new JsonArray();
+                while (activityResults.hasNext()) {
+                    Entity activityEntity = activityResults.next();
+                    JsonObject activityJson = new JsonObject();
+                    activityJson.addProperty("activity_id", String.valueOf(activityEntity.getKey().getId()));
+                    if (activityEntity.contains("status"))
+                        activityJson.addProperty("status", activityEntity.getString("status"));
+                    if (activityEntity.contains("start_time"))
+                        activityJson.addProperty("start_time", activityEntity.getString("start_time"));
+                    if (activityEntity.contains("end_time"))
+                        activityJson.addProperty("end_time", activityEntity.getString("end_time"));
+                    if (activityEntity.contains("observations"))
+                        activityJson.addProperty("observations", activityEntity.getString("observations"));
+                    if (activityEntity.contains("gpx_track")) {
+                        try {
+                            ExecutionSheetData.Track[] tracks = g.fromJson(
+                                    activityEntity.getString("gpx_track"),
+                                    ExecutionSheetData.Track[].class);
+                            activityJson.add("tracks", g.toJsonTree(tracks));
+                        } catch (Exception e) {
+                            LOG.warning("Error parsing GPX track: " + e.getMessage());
+                        }
+                    }
+                    activities.add(activityJson);
+                }
+
+                polygonOpJson.add("activities", activities);
+                polygonOperations.add(polygonOpJson);
+            }
+
+            result.add("polygon_operations", polygonOperations);
+            return Response.ok(g.toJson(result)).build();
+
+        } catch (Exception ex) {
+            LOG.severe("Error in getExecution: " + ex.getMessage());
+            return Response.serverError().entity("{\"error\":\"" + ex.getMessage() + "\"}").build();
         }
-        result.add("polygon_operations", polygonOperations);
-
-        return Response.ok(g.toJson(result)).build();
     }
 
     @GET
     @Path("/status/poly-op/{executionId}/{polygonId}/{operationCode}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response getActivitiesForPolygonOperation(@PathParam("executionId") String executionId,
-                                                     @PathParam("polygonId") long polygonId,
-                                                     @PathParam("operationCode") String opCode,
-                                                     @CookieParam("session::apdc") Cookie cookie,
-                                                     @HeaderParam("Authorization") String authHeader) {
-    
+            @PathParam("polygonId") long polygonId,
+            @PathParam("operationCode") String opCode,
+            @CookieParam("session::apdc") Cookie cookie,
+            @HeaderParam("Authorization") String authHeader) {
+
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token))
             return unauthorized("Invalid session");
-    
+
         DecodedJWT jwt = JWTToken.extractJWT(token);
         if (jwt == null)
             return unauthorized("Failed to decode token");
-    
+
         String role = jwt.getClaim("role").asString();
         if (!Set.of(Roles.PRBO, Roles.PO).contains(role))
             return forbidden("Access denied");
-    
+
         if (executionId == null || opCode == null || polygonId <= 0)
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("{\"error\":\"Missing required parameters.\"}").build();
-    
+
         Query<Entity> query = Query.newEntityQueryBuilder()
                 .setKind("ExecutionActivity")
                 .setFilter(StructuredQuery.CompositeFilter.and(
@@ -644,10 +697,10 @@ public class ExecutionSheetResource {
                         StructuredQuery.PropertyFilter.eq("operation_code", opCode),
                         StructuredQuery.PropertyFilter.eq("polygon_id", polygonId)))
                 .build();
-    
+
         QueryResults<Entity> results = datastore.run(query);
         JsonArray activities = new JsonArray();
-    
+
         while (results.hasNext()) {
             Entity e = results.next();
             JsonObject obj = new JsonObject();
@@ -658,27 +711,28 @@ public class ExecutionSheetResource {
             obj.addProperty("starting_date", e.contains("start_time") ? e.getString("start_time") : null);
             obj.addProperty("finishing_date", e.contains("end_time") ? e.getString("end_time") : null);
             obj.addProperty("observations", e.contains("observations") ? e.getString("observations") : null);
-    
+
             if (e.contains("gpx_track")) {
                 try {
                     obj.add("tracks", g.toJsonTree(
                             g.fromJson(e.getString("gpx_track"), ExecutionSheetData.Track[].class)));
-                } catch (Exception ignore) {}
+                } catch (Exception ignore) {
+                }
             }
-    
+
             activities.add(obj);
         }
-    
+
         return Response.ok(g.toJson(activities)).build();
     }
-    
+
     @GET
     @Path("/status/global/{executionId}/{operationCode}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response getGlobalStatus(@PathParam("executionId") String executionId,
-                                    @PathParam("operationCode") String opCode,
-                                    @CookieParam("session::apdc") Cookie cookie,
-                                    @HeaderParam("Authorization") String authHeader) {
+            @PathParam("operationCode") String opCode,
+            @CookieParam("session::apdc") Cookie cookie,
+            @HeaderParam("Authorization") String authHeader) {
 
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token))
@@ -773,14 +827,15 @@ public class ExecutionSheetResource {
                 try {
                     act.add("tracks", g.toJsonTree(
                             g.fromJson(e.getString("gpx_track"), ExecutionSheetData.Track[].class)));
-                } catch (Exception ignore) {}
+                } catch (Exception ignore) {
+                }
             }
 
             activities.add(act);
 
             // calcular última atividade
-            String activityDate = e.contains("end_time") ? e.getString("end_time") :
-                                e.contains("start_time") ? e.getString("start_time") : null;
+            String activityDate = e.contains("end_time") ? e.getString("end_time")
+                    : e.contains("start_time") ? e.getString("start_time") : null;
 
             if (activityDate != null && (lastActivityDate == null || activityDate.compareTo(lastActivityDate) > 0))
                 lastActivityDate = activityDate;
@@ -808,8 +863,8 @@ public class ExecutionSheetResource {
     @Path("/export/{executionId}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response exportExecutionSheet(@CookieParam("session::apdc") Cookie cookie,
-                                            @HeaderParam("Authorization") String authHeader,
-                                            @PathParam("executionId") String executionId) {
+            @HeaderParam("Authorization") String authHeader,
+            @PathParam("executionId") String executionId) {
 
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token))
@@ -924,8 +979,7 @@ public class ExecutionSheetResource {
                             .setFilter(StructuredQuery.CompositeFilter.and(
                                     StructuredQuery.PropertyFilter.eq("execution_id", executionId),
                                     StructuredQuery.PropertyFilter.eq("polygon_id", e.getString("polygon_id")),
-                                    StructuredQuery.PropertyFilter.eq("operation_code", opCode)
-                            ))
+                                    StructuredQuery.PropertyFilter.eq("operation_code", opCode)))
                             .build();
 
                     QueryResults<Entity> activities = datastore.run(actQuery);
@@ -935,8 +989,10 @@ public class ExecutionSheetResource {
                             try {
                                 JsonArray actTracks = g.toJsonTree(
                                         g.fromJson(act.getString("gpx_track"),
-                                                ExecutionSheetData.Track[].class)).getAsJsonArray();
-                                for (JsonElement t : actTracks) tracks.add(t);
+                                                ExecutionSheetData.Track[].class))
+                                        .getAsJsonArray();
+                                for (JsonElement t : actTracks)
+                                    tracks.add(t);
                             } catch (Exception ex) {
                                 LOG.warning("Failed to parse gpx_track: " + ex.getMessage());
                             }
@@ -948,7 +1004,8 @@ public class ExecutionSheetResource {
                     String polyKey = String.valueOf(polygonId);
                     JsonObject polygon = polygonMap.getOrDefault(polyKey, new JsonObject());
                     polygon.addProperty("polygon_id", polygonId);
-                    JsonArray polyOps = polygon.has("operations") ? polygon.getAsJsonArray("operations") : new JsonArray();
+                    JsonArray polyOps = polygon.has("operations") ? polygon.getAsJsonArray("operations")
+                            : new JsonArray();
                     polyOps.add(operation);
                     polygon.add("operations", polyOps);
                     polygonMap.put(polyKey, polygon);
@@ -970,7 +1027,6 @@ public class ExecutionSheetResource {
             return Response.serverError().entity("{\"error\":\"Export failed: " + ex.getMessage() + "\"}").build();
         }
     }
-
 
     @GET
     @Path("/viewActiveOperation/{worksheetId}/{polygonId}/{operationCode}")
@@ -1065,8 +1121,8 @@ public class ExecutionSheetResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response editOperationDetails(@CookieParam("session::apdc") Cookie cookie,
-                                        @HeaderParam("Authorization") String authHeader,
-                                        EditOperationRequest input) {
+            @HeaderParam("Authorization") String authHeader,
+            EditOperationRequest input) {
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token))
             return unauthorized("Invalid session");
@@ -1125,7 +1181,6 @@ public class ExecutionSheetResource {
         return Response.ok(g.toJson(response)).build();
     }
 
-
     @POST
     @Path("/notify/out")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -1141,19 +1196,19 @@ public class ExecutionSheetResource {
 
         Entity notification = Entity.newBuilder(datastore.allocateId(
                 datastore.newKeyFactory().setKind("Notification").newKey()))
-            .set("type", "OUT_OF_AREA")
-            .set("operator_id", operatorId)
-            .set("worksheet_id", worksheetId)
-            .set("polygon_id", polygonId)
-            .set("timestamp", Timestamp.now())
-            .build();
+                .set("type", "OUT_OF_AREA")
+                .set("operator_id", operatorId)
+                .set("worksheet_id", worksheetId)
+                .set("polygon_id", polygonId)
+                .set("timestamp", Timestamp.now())
+                .build();
 
         datastore.put(notification);
 
-        LOG.info("[NOTIFY-OUT] Operator " + operatorId + " out of polygon " + polygonId + " in worksheet " + worksheetId);
+        LOG.info("[NOTIFY-OUT] Operator " + operatorId + " out of polygon " + polygonId + " in worksheet "
+                + worksheetId);
         return Response.ok("{\"message\":\"Notification stored.\"}").build();
     }
-
 
     @POST
     @Path("/notify/polyEnd")
