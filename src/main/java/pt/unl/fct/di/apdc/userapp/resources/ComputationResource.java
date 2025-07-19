@@ -197,7 +197,7 @@ public class ComputationResource {
 
         for (String name : entity.getNames()) {
             // Nunca expor password
-            if (name.equals("password"))
+            if (name.equals("user_pwd"))
                 continue;
 
             // Se for RU ou VU, limitar os campos visíveis
