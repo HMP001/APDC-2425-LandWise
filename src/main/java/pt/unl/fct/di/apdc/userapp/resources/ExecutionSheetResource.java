@@ -1,5 +1,17 @@
 package pt.unl.fct.di.apdc.userapp.resources;
 
+import java.io.InputStream;
+import java.util.UUID;
+import java.util.List;
+
+import org.glassfish.jersey.media.multipart.FormDataParam;
+import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
+
+import com.google.cloud.storage.BlobInfo;
+import com.google.cloud.storage.Storage;
+import com.google.cloud.storage.StorageOptions;
+import com.google.cloud.storage.Acl;
+
 import java.lang.reflect.Type;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -498,10 +510,13 @@ public class ExecutionSheetResource {
 
     @POST
     @Path("/addInfo")
-    @Consumes(MediaType.APPLICATION_JSON)
-    public Response addInfoToActivity(@CookieParam("session::apdc") Cookie cookie,
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    public Response addInfoToActivity(
+            @CookieParam("session::apdc") Cookie cookie,
             @HeaderParam("Authorization") String authHeader,
-            AddInfoToActivityRequest input) {
+            @FormDataParam("data") String dataJson,
+            @FormDataParam("photos") List<InputStream> photoStreams,
+            @FormDataParam("photos") List<FormDataContentDisposition> photoDetails) {
         String token = extractJWT(cookie, authHeader);
         if (token == null || !JWTToken.validateJWT(token))
             return unauthorized("Invalid session");
@@ -513,6 +528,14 @@ public class ExecutionSheetResource {
         String role = jwt.getClaim("role").asString();
         String user = jwt.getSubject();
 
+        AddInfoToActivityRequest input;
+        try {
+            input = g.fromJson(dataJson, AddInfoToActivityRequest.class);
+        } catch (Exception e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("{\"error\":\"Invalid data JSON: " + e.getMessage() + "\"}").build();
+        }
+
         if (!Roles.PO.equalsIgnoreCase(role))
             return forbidden("Only PO can add info");
 
@@ -523,7 +546,7 @@ public class ExecutionSheetResource {
         // Find ExecutionActivity by activity_id
         PathElement execSheetAncestor = PathElement.of("ExecutionSheet", input.execution_id);
         Key activityKey = datastore.newKeyFactory().setKind("ExecutionActivity").addAncestor(execSheetAncestor)
-                .newKey(Long.parseLong(input.activity_id));
+                .newKey(input.activity_id);
         Entity activityEntity = datastore.get(activityKey);
         if (activityEntity == null) {
             JsonObject response = new JsonObject();
@@ -541,18 +564,62 @@ public class ExecutionSheetResource {
             return Response.ok(g.toJson(response)).build();
         }
 
+        // Handle photo uploads to GCS
+        java.util.List<String> uploadedPhotoUrls = new java.util.ArrayList<>();
+        if (photoStreams != null && photoDetails != null && photoStreams.size() == photoDetails.size()) {
+            String bucketName = "alien-iterator-460014-a0.appspot.com";
+            Storage storage = StorageOptions.getDefaultInstance().getService();
+            for (int i = 0; i < photoStreams.size(); i++) {
+                InputStream stream = photoStreams.get(i);
+                FormDataContentDisposition detail = photoDetails.get(i);
+                String fileName = "activity_photos/" + input.activity_id + "_" + java.util.UUID.randomUUID() + "_"
+                        + detail.getFileName();
+                BlobInfo blobInfo = BlobInfo.newBuilder(bucketName, fileName)
+                        .setContentType(detail.getType())
+                        .setAcl(java.util.Arrays.asList(
+                                com.google.cloud.storage.Acl.of(com.google.cloud.storage.Acl.User.ofAllUsers(),
+                                        com.google.cloud.storage.Acl.Role.READER)))
+                        .build();
+                try (java.nio.channels.WritableByteChannel channel = storage.writer(blobInfo)) {
+                    byte[] buffer = new byte[8192];
+                    int bytesRead;
+                    while ((bytesRead = stream.read(buffer)) != -1) {
+                        channel.write(java.nio.ByteBuffer.wrap(buffer, 0, bytesRead));
+                    }
+                } catch (Exception e) {
+                    LOG.warning("Failed to upload activity photo: " + e.getMessage());
+                    continue;
+                }
+                String url = String.format("https://storage.googleapis.com/%s/%s", bucketName, fileName);
+                uploadedPhotoUrls.add(url);
+            }
+        }
+
+        // Merge provided photo_urls (JSON array) with uploaded ones
+        java.util.List<String> allPhotoUrls = new java.util.ArrayList<>(uploadedPhotoUrls);
+        if (input.photo_urls != null) {
+            try {
+                java.util.List<String> providedUrls = input.photo_urls;
+                if (providedUrls != null)
+                    allPhotoUrls.addAll(providedUrls);
+            } catch (Exception e) {
+                LOG.warning("Failed to parse photo_urls: " + e.getMessage());
+            }
+        }
+
         // Update ExecutionActivity entity with new info
         Entity.Builder updatedActivityBuilder = Entity.newBuilder(activityEntity);
         if (input.observations != null)
             updatedActivityBuilder.set("observations", input.observations);
-        if (input.photo_urls != null)
-            updatedActivityBuilder.set("photo_urls", g.toJson(input.photo_urls));
+        if (!allPhotoUrls.isEmpty())
+            updatedActivityBuilder.set("photo_urls", g.toJson(allPhotoUrls));
         if (input.tracks != null && !input.tracks.isEmpty())
             updatedActivityBuilder.set("gpx_track", g.toJson(input.tracks.get(0)));
         datastore.put(updatedActivityBuilder.build());
 
         JsonObject response = new JsonObject();
         response.addProperty("message", "✅ Added info to activity " + input.activity_id);
+        response.add("photo_urls", g.toJsonTree(allPhotoUrls));
         return Response.ok(g.toJson(response)).build();
     }
 
@@ -1240,4 +1307,133 @@ public class ExecutionSheetResource {
     private String nvl(String s, String def) {
         return s == null ? def : s;
     }
+
+    @GET
+    @Path("/getConcludedActivities/{executionId}/{operatorName}")
+    public Response getConcludedActivities(
+            @PathParam("executionId") String executionId,
+            @PathParam("operatorName") String operatorName,
+            @CookieParam("session::apdc") Cookie cookie,
+            @HeaderParam("Authorization") String authHeader) {
+        LOG.info("[GET-CONCLUDED-ACTIVITIES] Fetching concluded activities for execution " + executionId
+                + " and operator " + operatorName);
+
+        String token = extractJWT(cookie, authHeader);
+        if (token == null || !JWTToken.validateJWT(token)) {
+            return unauthorized("Invalid session");
+        }
+        DecodedJWT jwt = JWTToken.extractJWT(token);
+        if (jwt == null) {
+            return unauthorized("Failed to decode token");
+        }
+
+        String role = jwt.getClaim("role").asString();
+        if (!Set.of(Roles.PRBO, Roles.PO).contains(role)) {
+            return forbidden("Access denied");
+        }
+
+        if (executionId == null || executionId.isEmpty() || operatorName == null || operatorName.isEmpty()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("{\"error\":\"Missing executionId or operatorName\"}").build();
+        }
+
+        Query<Entity> query = Query.newEntityQueryBuilder()
+                .setKind("ExecutionActivity")
+                .setFilter(StructuredQuery.CompositeFilter.and(
+                        StructuredQuery.PropertyFilter.eq("execution_id", executionId),
+                        StructuredQuery.PropertyFilter.eq("operator_username", operatorName),
+                        StructuredQuery.PropertyFilter.eq("status", "executado")))
+                .build();
+        QueryResults<Entity> results = datastore.run(query);
+
+        JsonArray activities = new JsonArray();
+
+        while (results.hasNext()) {
+            Entity entity = results.next();
+            JsonObject activity = new JsonObject();
+            activity.addProperty("id", entity.getKey().getId());
+            activity.addProperty("execution_id", entity.getString("execution_id"));
+            activity.addProperty("operator_username", entity.getString("operator_username"));
+            activity.addProperty("status", entity.getString("status"));
+            activity.addProperty("start_time", entity.getString("start_time"));
+            activity.addProperty("end_time", entity.getString("end_time"));
+            activity.addProperty("observations", nvl(entity.getString("observations"), ""));
+            activities.add(activity);
+        }
+        if (activities.size() == 0) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("{\"error\":\"No concluded activities found for the specified execution and operator.\"}")
+                    .build();
+        }
+        LOG.info("[GET-CONCLUDED-ACTIVITIES] Found " + activities.size() + " concluded activities for execution "
+                + executionId + " and operator " + operatorName);
+
+        return Response.ok(activities.toString()).build();
+    }
+
+    @GET
+    @Path("/getOperation/{executionId}/{operationCode}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getOperationDetails(@PathParam("executionId") String executionId,
+            @PathParam("operationCode") String operationCode,
+            @CookieParam("session::apdc") Cookie cookie,
+            @HeaderParam("Authorization") String authHeader) {
+
+        String token = extractJWT(cookie, authHeader);
+        if (token == null || !JWTToken.validateJWT(token))
+            return unauthorized("Invalid session");
+        DecodedJWT jwt = JWTToken.extractJWT(token);
+        if (jwt == null)
+            return unauthorized("Failed to decode token");
+
+        String role = jwt.getClaim("role").asString();
+        if (!Set.of(Roles.PRBO, Roles.PO).contains(role))
+            return forbidden("Access denied");
+
+        if (executionId == null || executionId.isEmpty() || operationCode == null || operationCode.isEmpty()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("{\"error\":\"Missing executionId or operationCode\"}").build();
+        }
+
+        Key execKey = datastore.newKeyFactory().setKind("ExecutionSheet").newKey(executionId);
+        Entity execSheet = datastore.get(execKey);
+        if (execSheet == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("{\"error\":\"Execution sheet not found\"}").build();
+        }
+
+        if (!execSheet.contains("operations") || !execSheet.getString("operations").contains(operationCode)) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("{\"error\":\"Operation code not found in execution sheet\"}").build();
+        }
+
+        JsonArray operationsArray = JsonParser.parseString(execSheet.getString("operations")).getAsJsonArray();
+        JsonObject operation = null;
+        for (JsonElement opElem : operationsArray) {
+            JsonObject opObj = opElem.getAsJsonObject();
+            if (opObj.has("operation_code") && opObj.get("operation_code").getAsString().equals(operationCode)) {
+                operation = opObj;
+                break;
+            }
+        }
+
+        if (operation == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("{\"error\":\"Operation code not found in execution sheet operations\"}").build();
+        }
+
+        JsonObject result = new JsonObject();
+        result.addProperty("execution_id", executionId);
+        result.addProperty("operation_code", operationCode);
+        result.addProperty("expected_duration_hours",
+                operation.has("expected_duration_hours") ? operation.get("expected_duration_hours").getAsString()
+                        : null);
+        result.addProperty("expected_finish_date",
+                operation.has("expected_finish_date") ? operation.get("expected_finish_date").getAsString() : null);
+        result.addProperty("observations",
+                operation.has("observations") ? operation.get("observations").getAsString() : null);
+
+        return Response.ok(result.toString()).build();
+    }
+
 }
