@@ -7,6 +7,7 @@ public class EditOperationRequest {
     public static class OperationPatch {
         public String operation_code;
         public String expected_duration_hours;
+        public String expected_start_date;
         public String expected_finish_date;
         public String observations;
     }

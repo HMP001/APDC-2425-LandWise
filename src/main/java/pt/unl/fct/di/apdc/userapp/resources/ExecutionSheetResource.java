@@ -1,17 +1,6 @@
 package pt.unl.fct.di.apdc.userapp.resources;
 
 import java.io.InputStream;
-import java.util.UUID;
-import java.util.List;
-
-import org.glassfish.jersey.media.multipart.FormDataParam;
-import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
-
-import com.google.cloud.storage.BlobInfo;
-import com.google.cloud.storage.Storage;
-import com.google.cloud.storage.StorageOptions;
-import com.google.cloud.storage.Acl;
-
 import java.lang.reflect.Type;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -23,6 +12,9 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Logger;
 
+import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
+import org.glassfish.jersey.media.multipart.FormDataParam;
+
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.google.cloud.Timestamp;
 import com.google.cloud.datastore.Datastore;
@@ -33,6 +25,9 @@ import com.google.cloud.datastore.PathElement;
 import com.google.cloud.datastore.Query;
 import com.google.cloud.datastore.QueryResults;
 import com.google.cloud.datastore.StructuredQuery;
+import com.google.cloud.storage.BlobInfo;
+import com.google.cloud.storage.Storage;
+import com.google.cloud.storage.StorageOptions;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -1223,6 +1218,8 @@ public class ExecutionSheetResource {
             if (op.get("operation_code").getAsString().equals(input.operation.operation_code)) {
                 if (input.operation.expected_duration_hours != null)
                     op.addProperty("expected_duration_hours", input.operation.expected_duration_hours);
+                if (input.operation.expected_start_date != null)
+                    op.addProperty("expected_start_date", input.operation.expected_start_date);
                 if (input.operation.expected_finish_date != null)
                     op.addProperty("expected_finish_date", input.operation.expected_finish_date);
                 if (input.operation.observations != null)
@@ -1437,5 +1434,111 @@ public class ExecutionSheetResource {
 
         return Response.ok(result.toString()).build();
     }
+
+    @GET
+    @Path("/getAssignedActivities/{executionId}/{operatorUsername}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getAssignedActivities(
+            @PathParam("executionId") String executionId,
+            @PathParam("operatorUsername") String operatorUsername,
+            @CookieParam("session::apdc") Cookie cookie,
+            @HeaderParam("Authorization") String authHeader) {
+
+        LOG.info("[GET-ASSIGNED-ACTIVITIES] Fetching assigned operations and activities for " + operatorUsername);
+
+        String token = extractJWT(cookie, authHeader);
+        if (token == null || !JWTToken.validateJWT(token)) {
+            return unauthorized("Invalid session");
+        }
+
+        DecodedJWT jwt = JWTToken.extractJWT(token);
+        if (jwt == null) {
+            return unauthorized("Failed to decode token");
+        }
+
+        String role = jwt.getClaim("role").asString();
+        String requester = jwt.getSubject();
+
+        if (!Set.of(Roles.PRBO, Roles.SDVBO).contains(role) && !operatorUsername.equals(requester)) {
+            return forbidden("Access denied");
+        }
+
+        if (executionId == null || executionId.isEmpty() || operatorUsername == null || operatorUsername.isEmpty()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("{\"error\":\"Missing executionId or operatorUsername\"}").build();
+        }
+
+        JsonArray resultArray = new JsonArray();
+
+        Query<Entity> polyOpsQuery = Query.newEntityQueryBuilder()
+                .setKind("Exec_Poly-Op")
+                .setFilter(StructuredQuery.CompositeFilter.and(
+                        StructuredQuery.PropertyFilter.eq("execution_id", executionId),
+                        StructuredQuery.PropertyFilter.eq("operator_username", operatorUsername)
+                ))
+                .build();
+        QueryResults<Entity> polyOps = datastore.run(polyOpsQuery);
+
+        while (polyOps.hasNext()) {
+            Entity e = polyOps.next();
+            JsonObject pair = new JsonObject();
+            pair.addProperty("polygon_id", e.getString("polygon_id"));
+            pair.addProperty("operation_code", e.getString("operation_code"));
+            pair.addProperty("status", e.getString("status"));
+
+            if (e.contains("starting_date"))
+                pair.addProperty("starting_date", e.getString("starting_date"));
+            if (e.contains("finishing_date"))
+                pair.addProperty("finishing_date", e.getString("finishing_date"));
+            if (e.contains("last_activity_date"))
+                pair.addProperty("last_activity_date", e.getString("last_activity_date"));
+            if (e.contains("observations"))
+                pair.addProperty("observations", e.getString("observations"));
+
+            JsonArray activities = new JsonArray();
+            Query<Entity> activityQuery = Query.newEntityQueryBuilder()
+                    .setKind("ExecutionActivity")
+                    .setFilter(StructuredQuery.CompositeFilter.and(
+                            StructuredQuery.PropertyFilter.eq("execution_id", executionId),
+                            StructuredQuery.PropertyFilter.eq("polygon_id", e.getString("polygon_id")),
+                            StructuredQuery.PropertyFilter.eq("operation_code", e.getString("operation_code")),
+                            StructuredQuery.PropertyFilter.eq("operator_username", operatorUsername)
+                    ))
+                    .build();
+
+            QueryResults<Entity> activityResults = datastore.run(activityQuery);
+
+            while (activityResults.hasNext()) {
+                Entity activity = activityResults.next();
+                JsonObject act = new JsonObject();
+                act.addProperty("activity_id", activity.getKey().getName());
+                act.addProperty("status", activity.getString("status"));
+                if (activity.contains("start_time"))
+                    act.addProperty("start_time", activity.getString("start_time"));
+                if (activity.contains("end_time"))
+                    act.addProperty("end_time", activity.getString("end_time"));
+                if (activity.contains("observations"))
+                    act.addProperty("observations", activity.getString("observations"));
+
+                if (activity.contains("gpx_track")) {
+                    try {
+                        act.add("tracks", g.toJsonTree(
+                                g.fromJson(activity.getString("gpx_track"), ExecutionSheetData.Track[].class)));
+                    } catch (Exception ignore) {
+                    }
+                }
+
+                activities.add(act);
+            }
+
+            pair.add("activities", activities);
+            resultArray.add(pair);
+        }
+
+        LOG.info("[GET-ASSIGNED-ACTIVITIES] Found " + resultArray.size() + " assignments for operator " + operatorUsername);
+
+        return Response.ok(g.toJson(resultArray)).build();
+    }
+
 
 }
