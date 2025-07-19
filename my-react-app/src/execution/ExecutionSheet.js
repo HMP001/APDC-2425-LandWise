@@ -25,7 +25,21 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
   // Initialize execution sheet data
   useEffect(() => {
     if (executionSheetData) {
-      setExecutionSheet(executionSheetData);
+      // Transform flat polygon_operations to grouped structure if needed
+      let sheet = { ...executionSheetData };
+      if (Array.isArray(sheet.polygon_operations) && sheet.polygon_operations.length > 0 && !sheet.polygon_operations[0].operations) {
+        // Group by polygon_id
+        const grouped = {};
+        sheet.polygon_operations.forEach(po => {
+          const pid = po.polygon_id;
+          if (!grouped[pid]) grouped[pid] = { polygon_id: pid, operations: [] };
+          // Copy all fields except polygon_id and operation_code into operation object
+          const { polygon_id, ...op } = po;
+          grouped[pid].operations.push(op);
+        });
+        sheet.polygon_operations = Object.values(grouped);
+      }
+      setExecutionSheet(sheet);
       setIsLoading(false);
     } else {
       // Create a sample execution sheet for demonstration
@@ -61,7 +75,7 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
           observations: "Seeding in progress, weather permitting"
         }
       ],
-      polygons_operations: [
+      polygon_operations: [
         {
           polygon_id: 101,
           operations: [
@@ -185,6 +199,7 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
   const handleSave = () => {
     const errors = {};
     let updatedSheet = executionSheet;
+    let hasChanges = false;
     // Only for summary table (executionSheet.operations)
     for (const idx in operationEdits) {
       const edited = operationEdits[idx];
@@ -198,12 +213,15 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
         updatedSheet = { ...updatedSheet };
         updatedSheet.operations = [...updatedSheet.operations];
         updatedSheet.operations[idx] = { ...edited };
+        hasChanges = true;
       }
     }
     setOperationEditErrors(errors);
     setEditMode(false);
     if (onSave) {
-      onSave(updatedSheet, pendingAssignments);
+      if (hasChanges || pendingAssignments.length > 0) {
+        onSave(updatedSheet, pendingAssignments);
+      }
       setPendingAssignments([]);
     } else {
       setExecutionSheet(updatedSheet);
@@ -226,7 +244,7 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
       setTimeout(() => {
         setExecutionSheet(prevSheet => {
           const updatedSheet = { ...prevSheet };
-          const polygonOps = updatedSheet.polygons_operations.find(po => po.polygon_id === polygonId);
+          const polygonOps = updatedSheet.polygon_operations.find(po => po.polygon_id === polygonId);
           if (polygonOps) {
             const operation = polygonOps.operations.find(op => op.operation_code === operationCode);
             if (operation) {
@@ -276,7 +294,7 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
     if (!executionSheetData) {
       setExecutionSheet(prevSheet => {
         const updatedSheet = { ...prevSheet };
-        const polygonOps = updatedSheet.polygons_operations.find(po => po.polygon_id === polygonId);
+        const polygonOps = updatedSheet.polygon_operations.find(po => po.polygon_id === polygonId);
         if (polygonOps) {
           const operation = polygonOps.operations.find(op => op.operation_code === operationCode);
           if (operation) {
@@ -304,7 +322,7 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
   // Handle operation status update
   const handleStatusUpdate = (polygonId, operationCode, newStatus) => {
     const updatedSheet = { ...executionSheet };
-    const polygonOps = updatedSheet.polygons_operations.find(po => po.polygon_id === polygonId);
+    const polygonOps = updatedSheet.polygon_operations.find(po => po.polygon_id === polygonId);
     if (polygonOps) {
       const operation = polygonOps.operations.find(op => op.operation_code === operationCode);
       if (operation) {
@@ -383,6 +401,12 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
           Polygon Operations
         </button>
         <button
+          className={`tab ${activeTab === 'activities' ? 'active' : ''}`}
+          onClick={() => setActiveTab('activities')}
+        >
+          Activities
+        </button>
+        <button
           className={`tab ${activeTab === 'tracking' ? 'active' : ''}`}
           onClick={() => setActiveTab('tracking')}
         >
@@ -392,6 +416,59 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
 
       {/* Content Area */}
       <div className="execution-sheet-content">
+        {activeTab === 'activities' && (
+          <div className="activities-section">
+            <h3>Activities for Selected Polygon</h3>
+            {selectedPolygon ? (
+              (() => {
+                const polygonOps = executionSheet.polygon_operations.find(po => po.polygon_id === selectedPolygon);
+                if (!polygonOps) return <div>No polygon selected.</div>;
+                return (
+                  <div
+                    className="activities-grid"
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr',
+                      gap: 24,
+                      maxHeight: 700,
+                      overflowY: 'auto',
+                      padding: '8px',
+                      margin: '0 auto',
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      background: '#fafbfc',
+                      borderRadius: 12,
+                      border: '1px solid #e3e6ea'
+                    }}
+                  >
+                    {polygonOps.operations.map((operation) => (
+                      <div key={operation.operation_code} className="activity-card" style={{ background: '#fff', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.04)', padding: '12px', marginBottom: 0 }}>
+                        <h4>{operation.operation_code}</h4>
+                        {operation.activities && operation.activities.length > 0 ? (
+                          <ul>
+                            {operation.activities.map(act => (
+                              <li key={act.activity_id}>
+                                <strong>{act.type}</strong> - {act.status} by {act.started_by} at {act.started_at}
+                                {act.finished_at && `, finished at ${act.finished_at}`}
+                                {act.observations && <span> | Obs: {act.observations}</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p>No activities recorded for this operation.</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()
+            ) : (
+              <div className="activities-placeholder">
+                <p>Select a polygon from the Polygon Operations tab to view its activities.</p>
+              </div>
+            )}
+          </div>
+        )}
         {activeTab === 'overview' && (
           <div className="overview-section">
             <div className="summary-cards">
@@ -413,7 +490,7 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
               </div>
               <div className="summary-card">
                 <h3>Active Polygons</h3>
-                <div className="summary-value">{executionSheet.polygons_operations.length}</div>
+                <div className="summary-value">{executionSheet.polygon_operations.length}</div>
               </div>
             </div>
 
@@ -539,7 +616,7 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
                 onChange={e => setSearchPolygonKey(e.target.value)}
                 onKeyDown={e => {
                   if (e.key === 'Enter') {
-                    const found = executionSheet.polygons_operations.find(
+                    const found = executionSheet.polygon_operations.find(
                       po => String(po.polygon_id).toLowerCase() === searchPolygonKey.trim().toLowerCase()
                     );
                     if (found) {
@@ -559,7 +636,7 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
               <button
                 className="btn btn-primary"
                 onClick={() => {
-                  const found = executionSheet.polygons_operations.find(
+                  const found = executionSheet.polygon_operations.find(
                     po =>
                       String(po.polygon_id).toLowerCase() === searchPolygonKey.trim().toLowerCase()
                   );
@@ -595,7 +672,7 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
                 border: '1px solid #e3e6ea'
               }}
             >
-              {executionSheet.polygons_operations.map((polygonOps) => (
+              {executionSheet.polygon_operations.map((polygonOps) => (
                 <div
                   key={polygonOps.polygon_id}
                   id={`polygon-card-${polygonOps.polygon_id}`}
@@ -726,7 +803,7 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
                                 onChange={e => {
                                   setExecutionSheet(prevSheet => {
                                     const updatedSheet = { ...prevSheet };
-                                    const polygonOpsEdit = updatedSheet.polygons_operations.find(po => po.polygon_id === polygonOps.polygon_id);
+                                    const polygonOpsEdit = updatedSheet.polygon_operations.find(po => po.polygon_id === polygonOps.polygon_id);
                                     if (polygonOpsEdit) {
                                       const opEdit = polygonOpsEdit.operations.find(op => op.operation_code === operation.operation_code);
                                       if (opEdit) opEdit.observations = e.target.value;
@@ -778,7 +855,7 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
               <div className="tracking-details">
                 <h4>Polygon #{selectedPolygon} Tracking</h4>
                 {(() => {
-                  const polygonOps = executionSheet.polygons_operations.find(po => po.polygon_id === selectedPolygon);
+                  const polygonOps = executionSheet.polygon_operations.find(po => po.polygon_id === selectedPolygon);
                   return polygonOps?.operations.map((operation) => (
                     <div key={operation.operation_code} className="tracking-operation">
                       <h5>{operation.operation_code}</h5>
@@ -879,9 +956,10 @@ export function ViewExecutionSheet() {
           // Do not show create prompt, just show error or export option
           return;
         }
+        CheckRequests(response, navigate);
         if (!response.ok) throw new Error('Failed to fetch execution sheet');
         const data = await response.json();
-        CheckRequests(data, navigate);
+        console.log('Fetched execution sheet:', data);
         if (mounted) setExecutionSheetData(data);
       } catch (err) {
         if (mounted) setError('Failed to load execution sheet data.');
@@ -896,8 +974,11 @@ export function ViewExecutionSheet() {
   if (loading) {
     return (
       <>
-        {topBar && typeof topBar === 'function' ? topBar(navigate) : topBar}
-        <div>Loading...</div>
+        {topBar(navigate)}
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Loading Execution Sheet...</p>
+        </div>
       </>
     );
   }
@@ -932,13 +1013,23 @@ export function ViewExecutionSheet() {
   }
 
   const onSave = async (updatedSheet, pendingAssignments = []) => {
-    if (!updatedSheet || !updatedSheet.id) {
+    // Only show error if updatedSheet is truly invalid (null or missing id)
+    if (!updatedSheet || typeof updatedSheet !== 'object' || !('id' in updatedSheet)) {
       setError('Invalid execution sheet data');
       return;
     }
 
+    const opsChanged = JSON.stringify(updatedSheet.operations) !== JSON.stringify(executionSheetData.operations);
+    const assignmentsChanged = pendingAssignments && pendingAssignments.length > 0;
+
+    if (!opsChanged && !assignmentsChanged) {
+      // No changes, do nothing and clear error
+      setError(null);
+      return;
+    }
+
     // Save operation edits
-    if (updatedSheet.operations !== executionSheetData.operations) {
+    if (opsChanged) {
       try {
         await editOperationRequest(updatedSheet.id, updatedSheet.operations);
         setExecutionSheetData(prev => ({ ...prev, operations: updatedSheet.operations }));
@@ -949,11 +1040,11 @@ export function ViewExecutionSheet() {
     }
 
     // Save batch assignments if any
-    if (pendingAssignments && pendingAssignments.length > 0) {
+    if (assignmentsChanged) {
       try {
         const payload = {
           worksheet_id: updatedSheet.id,
-          polygons_operations: pendingAssignments
+          polygon_operations: pendingAssignments
         };
         const res = await assignOperationRequest(payload);
         if (!res.ok) {
