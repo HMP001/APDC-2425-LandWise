@@ -537,28 +537,62 @@ const ExecutionSheet = ({ executionSheetData, onSave, onClose, isEditable = fals
                   {/* Photos Section */}
                   <div className="activity-detail-section">
                     <h4>Photos</h4>
-                    {selectedActivity.photo_urls && selectedActivity.photo_urls.length > 0 ? (
-                      <div className="photos-container">
-                        <details>
-                          <summary>View Photos ({selectedActivity.photo_urls.length})</summary>
-                          <div className="photos-grid">
-                            {selectedActivity.photo_urls.map((photoUrl, index) => (
-                              <div key={index} className="photo-item">
-                                <img
-                                  src={photoUrl}
-                                  alt={`Activity ${index + 1}`}
-                                  className="activity-photo"
-                                  onClick={() => window.open(photoUrl, '_blank')}
-                                />
-                                <span className="photo-label">Photo {index + 1}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </details>
-                      </div>
-                    ) : (
-                      <p>No photos available for this activity.</p>
-                    )}
+                    {(() => {
+                      // Normalize photo_urls to always be an array
+                      let photoUrls = [];
+                      if (Array.isArray(selectedActivity.photo_urls)) {
+                        photoUrls = selectedActivity.photo_urls;
+                      } else if (typeof selectedActivity.photo_urls === 'string') {
+                        // Try to parse JSON array string
+                        try {
+                          const parsed = JSON.parse(selectedActivity.photo_urls);
+                          if (Array.isArray(parsed)) {
+                            photoUrls = parsed;
+                          } else if (parsed) {
+                            photoUrls = [parsed];
+                          }
+                        } catch {
+                          // Fallback: treat as single URL string
+                          photoUrls = [selectedActivity.photo_urls];
+                        }
+                      } else if (selectedActivity.photo_urls) {
+                        photoUrls = [selectedActivity.photo_urls];
+                      }
+                      return photoUrls.length > 0 ? (
+                        <div className="photos-container">
+                          <details>
+                            <summary>View Photos ({photoUrls.length})</summary>
+                            <div className="photos-grid">
+                              {photoUrls.map((photoUrl, index) => {
+                                // Remove extra quotes if present
+                                let cleanUrl = photoUrl;
+                                if (typeof cleanUrl === 'string' && cleanUrl.startsWith('"') && cleanUrl.endsWith('"')) {
+                                  cleanUrl = cleanUrl.slice(1, -1);
+                                }
+                                // Also handle URLs wrapped in single quotes or as JSON string
+                                cleanUrl = cleanUrl.replace(/^['"]|['"]$/g, '');
+                                return (
+                                  <div key={index} className="photo-item">
+                                    <img
+                                      src={cleanUrl}
+                                      alt={`Activity ${index + 1}`}
+                                      className="activity-photo"
+                                      onClick={e => {
+                                        e.stopPropagation();
+                                        window.open(cleanUrl, '_blank');
+                                      }}
+                                    />
+                                    <span className="photo-label">Photo {index + 1}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </details>
+                        </div>
+                      ) : (
+                        <p>No photos available for this activity.</p>
+                      );
+                    })()}
                   </div>
 
                 </div>

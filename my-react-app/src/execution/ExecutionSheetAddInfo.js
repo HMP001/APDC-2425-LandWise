@@ -27,8 +27,26 @@ export default function ExecutionSheetAddInfo() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedActivity, setSelectedActivity] = useState(null);
-  const [mediaFields, setMediaFields] = useState({ photo: null, gps: '', observations: '' });
+  const [mediaFields, setMediaFields] = useState({ photos: [], gps: '', observations: '' });
   const [success, setSuccess] = useState(false);
+
+  // Helper functions for photo management
+  const handlePhotoAdd = (e) => {
+    const files = Array.from(e.target.files || []);
+    setMediaFields(fields => ({
+      ...fields,
+      photos: [...fields.photos, ...files]
+    }));
+    // Clear the input so the same file can be added again if needed
+    e.target.value = '';
+  };
+
+  const handlePhotoRemove = (index) => {
+    setMediaFields(fields => ({
+      ...fields,
+      photos: fields.photos.filter((_, i) => i !== index)
+    }));
+  };
 
   const fetchActivities = async () => {
     setLoading(true);
@@ -61,7 +79,11 @@ export default function ExecutionSheetAddInfo() {
 
   const handleMediaChange = (e) => {
     const { name, value, files } = e.target;
-    setMediaFields(fields => ({ ...fields, [name]: files ? files[0] : value }));
+    if (name === 'photos') {
+      setMediaFields(fields => ({ ...fields, photos: files ? Array.from(files) : [] }));
+    } else {
+      setMediaFields(fields => ({ ...fields, [name]: value }));
+    }
   };
 
   const handleAddMedia = async () => {
@@ -75,15 +97,22 @@ export default function ExecutionSheetAddInfo() {
         execution_id: id,
         activity_id: selectedActivity.activity_id,
         observations: mediaFields.observations,
-        tracks: mediaFields.gps ? [mediaFields.gps] : undefined
+        tracks: mediaFields.gps ? [mediaFields.gps] : []
       };
       formData.append('data', JSON.stringify(dataObj));
-      if (mediaFields.photo) {
-        formData.append('photos', mediaFields.photo);
+      if (mediaFields.photos && mediaFields.photos.length > 0) {
+        mediaFields.photos.forEach((file, idx) => {
+          console.log('Uploading photo:', {
+            name: file.name,
+            type: file.type,
+            size: file.size
+          });
+          formData.append('photos', file);
+        });
       }
       await addInfoRequest(formData);
       setSuccess(true);
-      setMediaFields({ photo: null, gps: '', observations: '' });
+      setMediaFields({ photos: [], gps: '', observations: '' });
       setSelectedActivity(null);
     } catch (e) {
       setError('Failed to add media/info.');
@@ -138,25 +167,59 @@ export default function ExecutionSheetAddInfo() {
           <div className="execution-sheet-edit-form execution-sheet-addinfo-form">
             <h3 className="execution-sheet-edit-modal-title">Add Media/Info to Activity</h3>
             <div className="form-group execution-sheet-edit-group">
-              <label className="execution-sheet-edit-label">Photo:</label>
+              <label className="execution-sheet-edit-label">Photos:</label>
               <input
                 type="file"
-                name="photo"
+                name="photos"
                 accept="image/*"
+                multiple
                 className="form-control execution-sheet-edit-input"
-                onChange={handleMediaChange}
+                onChange={handlePhotoAdd}
                 disabled={loading}
               />
+              {/* Photo previews */}
+              {mediaFields.photos.length > 0 && (
+                <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                  {mediaFields.photos.map((file, index) => (
+                    <div key={index} style={{ position: 'relative', border: '1px solid #ddd', borderRadius: 4, padding: 4 }}>
+                      <img
+                        src={URL.createObjectURL(file)}
+                        alt={`Preview ${index + 1}`}
+                        style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 4 }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handlePhotoRemove(index)}
+                        style={{
+                          position: 'absolute',
+                          top: -5,
+                          right: -5,
+                          background: 'red',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '50%',
+                          width: 20,
+                          height: 20,
+                          fontSize: 12,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="form-group execution-sheet-edit-group">
-              <label className="execution-sheet-edit-label">GPS Track:</label>
+              <label className="execution-sheet-edit-label">GPS Tracks:</label>
               <input
                 type="text"
                 name="gps"
                 value={mediaFields.gps}
-                onChange={handleMediaChange}
+                placeholder="Enter GPS track data"
                 className="form-control execution-sheet-edit-input"
-                placeholder="Paste GPS track data or file URL"
+                onChange={handleMediaChange}
                 disabled={loading}
               />
             </div>
@@ -165,10 +228,11 @@ export default function ExecutionSheetAddInfo() {
               <textarea
                 name="observations"
                 value={mediaFields.observations}
+                placeholder="Enter observations"
+                className="form-control execution-sheet-edit-input"
                 onChange={handleMediaChange}
-                className="form-control execution-sheet-edit-textarea"
-                rows={3}
                 disabled={loading}
+                rows="3"
               />
             </div>
             <div className="form-actions execution-sheet-edit-actions">
