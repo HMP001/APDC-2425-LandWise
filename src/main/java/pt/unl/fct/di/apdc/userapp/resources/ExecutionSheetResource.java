@@ -809,7 +809,7 @@ public class ExecutionSheetResource {
         while (results.hasNext()) {
             Entity e = results.next();
             JsonObject obj = new JsonObject();
-            obj.addProperty("activity_id", e.getKey().getId());
+            obj.addProperty("activity_id", e.getKey().getName());
             obj.addProperty("operation_code", opCode);
             obj.addProperty("polygon_id", polygonId);
             obj.addProperty("status", e.contains("status") ? e.getString("status") : null);
@@ -920,7 +920,7 @@ public class ExecutionSheetResource {
                 completed++;
 
             JsonObject act = new JsonObject();
-            act.addProperty("activity_id", String.valueOf(e.getKey().getId()));
+            act.addProperty("activity_id", e.getKey().getName());
             act.addProperty("operation_code", opCode);
             act.addProperty("polygon_id", e.contains("polygon_id") ? String.valueOf(e.getLong("polygon_id")) : null);
             act.addProperty("status", e.contains("status") ? e.getString("status") : null);
@@ -1391,7 +1391,7 @@ public class ExecutionSheetResource {
         while (results.hasNext()) {
             Entity entity = results.next();
             JsonObject activity = new JsonObject();
-            activity.addProperty("id", entity.getKey().getId());
+            activity.addProperty("activity_id", entity.getKey().getName());
             activity.addProperty("execution_id", entity.getString("execution_id"));
             activity.addProperty("operator_username", entity.getString("operator_username"));
             activity.addProperty("status", entity.getString("status"));
