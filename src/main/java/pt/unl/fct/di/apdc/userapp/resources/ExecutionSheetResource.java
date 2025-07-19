@@ -18,7 +18,6 @@ import com.google.cloud.datastore.Key;
 import com.google.cloud.datastore.PathElement;
 import com.google.cloud.datastore.Query;
 import com.google.cloud.datastore.QueryResults;
-import com.google.cloud.datastore.StringValue;
 import com.google.cloud.datastore.StructuredQuery;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -43,7 +42,12 @@ import jakarta.ws.rs.core.Response.Status;
 import pt.unl.fct.di.apdc.userapp.util.ExecutionSheetData;
 import pt.unl.fct.di.apdc.userapp.util.JWTToken;
 import pt.unl.fct.di.apdc.userapp.util.Roles;
-import pt.unl.fct.di.apdc.userapp.util.execution.*;
+import pt.unl.fct.di.apdc.userapp.util.execution.AddInfoToActivityRequest;
+import pt.unl.fct.di.apdc.userapp.util.execution.AssignOperationRequest;
+import pt.unl.fct.di.apdc.userapp.util.execution.CreateExecutionSheetRequest;
+import pt.unl.fct.di.apdc.userapp.util.execution.EditOperationRequest;
+import pt.unl.fct.di.apdc.userapp.util.execution.StartActivityRequest;
+import pt.unl.fct.di.apdc.userapp.util.execution.StopActivityRequest;
 
 @Path("/execution")
 @Produces(MediaType.APPLICATION_JSON + ";charset=utf-8")
@@ -544,27 +548,43 @@ public class ExecutionSheetResource {
                 .build();
 
         QueryResults<Entity> results = datastore.run(query);
-        List<ExecutionSheetData.PolygonOperation> activities = new ArrayList<>();
+        List<JsonObject> activities = new ArrayList<>();
+        int total = 0;
+        int completed = 0;
 
         while (results.hasNext()) {
             Entity e = results.next();
-            ExecutionSheetData.PolygonOperation op = new ExecutionSheetData.PolygonOperation();
-            op.operation_code = operationCode;
-            op.activity_id = String.valueOf(e.getKey().getId());
-            op.status = e.contains("status") ? e.getString("status") : null;
-            op.starting_date = e.contains("start_time") ? String.valueOf(e.getLong("start_time")) : null;
-            op.finishing_date = e.contains("end_time") ? String.valueOf(e.getLong("end_time")) : null;
-            op.observations = e.contains("observations") ? e.getString("observations") : null;
+            total++;
+            if (e.contains("status") && "executado".equalsIgnoreCase(e.getString("status"))) {
+                completed++;
+            }
+            JsonObject op = new JsonObject();
+            op.addProperty("activity_id", String.valueOf(e.getKey().getId()));
+            op.addProperty("operation_code", operationCode);
+            op.addProperty("status", e.contains("status") ? e.getString("status") : null);
+            op.addProperty("starting_date", e.contains("start_time") ? e.getString("start_time") : null);
+            op.addProperty("finishing_date", e.contains("end_time") ? e.getString("end_time") : null);
+            op.addProperty("observations", e.contains("observations") ? e.getString("observations") : null);
             if (e.contains("gpx_track")) {
                 try {
-                    op.tracks = List.of(g.fromJson(e.getString("gpx_track"), ExecutionSheetData.Track[].class));
+                    op.add("tracks",
+                            g.toJsonTree(g.fromJson(e.getString("gpx_track"), ExecutionSheetData.Track[].class)));
                 } catch (Exception ignore) {
                 }
             }
             activities.add(op);
         }
 
-        return Response.ok(g.toJson(activities)).build();
+        JsonObject result = new JsonObject();
+        result.addProperty("execution_id", executionId);
+        result.addProperty("operation_code", operationCode);
+        result.addProperty("polygon_id", polygonId);
+        result.addProperty("total_activities", total);
+        result.addProperty("completed", completed);
+        result.addProperty("percentage", total == 0 ? 0 : (completed * 100 / total));
+        result.add("activities", g.toJsonTree(activities));
+
+        return Response.ok(g.toJson(result)).build();
     }
 
     @GET
@@ -594,6 +614,7 @@ public class ExecutionSheetResource {
                 .build();
 
         QueryResults<Entity> results = datastore.run(query);
+        List<JsonObject> activities = new ArrayList<>();
         int total = 0;
         int completed = 0;
 
@@ -603,14 +624,31 @@ public class ExecutionSheetResource {
             if (e.contains("status") && "executado".equalsIgnoreCase(e.getString("status"))) {
                 completed++;
             }
+            JsonObject op = new JsonObject();
+            op.addProperty("activity_id", String.valueOf(e.getKey().getId()));
+            op.addProperty("operation_code", opCode);
+            op.addProperty("polygon_id", e.contains("polygon_id") ? e.getString("polygon_id") : null);
+            op.addProperty("status", e.contains("status") ? e.getString("status") : null);
+            op.addProperty("starting_date", e.contains("start_time") ? e.getString("start_time") : null);
+            op.addProperty("finishing_date", e.contains("end_time") ? e.getString("end_time") : null);
+            op.addProperty("observations", e.contains("observations") ? e.getString("observations") : null);
+            if (e.contains("gpx_track")) {
+                try {
+                    op.add("tracks",
+                            g.toJsonTree(g.fromJson(e.getString("gpx_track"), ExecutionSheetData.Track[].class)));
+                } catch (Exception ignore) {
+                }
+            }
+            activities.add(op);
         }
 
-        Map<String, Object> result = new HashMap<>();
-        result.put("execution_id", executionId);
-        result.put("operation_code", opCode);
-        result.put("total_activities", total);
-        result.put("completed", completed);
-        result.put("percentage", total == 0 ? 0 : (completed * 100 / total));
+        JsonObject result = new JsonObject();
+        result.addProperty("execution_id", executionId);
+        result.addProperty("operation_code", opCode);
+        result.addProperty("total_activities", total);
+        result.addProperty("completed", completed);
+        result.addProperty("percentage", total == 0 ? 0 : (completed * 100 / total));
+        result.add("activities", g.toJsonTree(activities));
 
         return Response.ok(g.toJson(result)).build();
     }
